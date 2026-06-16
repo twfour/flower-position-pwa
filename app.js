@@ -19,6 +19,7 @@ const mapDetail = document.querySelector("#mapDetail");
 const historyList = document.querySelector("#historyList");
 
 const STORAGE_KEY = "flower-position-observations";
+const DELETED_STORAGE_KEY = "flower-position-deleted-observations";
 const API_URL = "/api/observations";
 
 const candidates = [
@@ -62,6 +63,23 @@ function saveLocalObservations(items) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
 }
 
+function loadDeletedObservationIds() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(DELETED_STORAGE_KEY) || "[]"));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveDeletedObservationIds(ids) {
+  localStorage.setItem(DELETED_STORAGE_KEY, JSON.stringify([...ids]));
+}
+
+function cleanObservation(observation) {
+  const { pendingSync, ...cleanedObservation } = observation;
+  return cleanedObservation;
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -91,6 +109,26 @@ async function saveCloudObservation(observation) {
   });
   if (!response.ok) throw new Error("Failed to save observation");
   return response.json();
+}
+
+async function updateCloudObservation(observation) {
+  const response = await fetch(`${API_URL}/${encodeURIComponent(observation.id)}`, {
+    method: "PUT",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ observation }),
+  });
+  if (!response.ok) throw new Error("Failed to update observation");
+  return response.json();
+}
+
+async function deleteCloudObservation(observationId) {
+  const response = await fetch(`${API_URL}/${encodeURIComponent(observationId)}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) throw new Error("Failed to delete observation");
 }
 
 async function clearCloudObservations() {
@@ -127,8 +165,9 @@ function renderHistory(items = loadLocalObservations()) {
       const location = item.location
         ? `${item.location.latitude.toFixed(5)}, ${item.location.longitude.toFixed(5)}`
         : "未记录位置";
+      const activeClass = item.id === selectedMapObservationId ? " is-active" : "";
       return `
-        <article class="history-item">
+        <article class="history-item${activeClass}" data-observation-id="${escapeHtml(item.id)}">
           <img src="${escapeHtml(item.photo || "assets/specimen.svg")}" alt="${escapeHtml(item.name)} 观察照片">
           <div>
             <span class="history-meta">${new Date(item.createdAt).toLocaleString("zh-CN")}</span>
@@ -170,21 +209,21 @@ function embeddedMapUrl(center, locations) {
 
 function renderMap(items = []) {
   const locatedItems = items.filter((item) => observationLocation(item));
+  const selectedItem = items.find((item) => item.id === selectedMapObservationId);
 
   if (!locatedItems.length) {
     mapCanvas.innerHTML = '<div class="map-empty">保存带定位的观察后，这里会出现点位分布。</div>';
-    mapDetail.innerHTML = `
-      <span class="history-meta">Map Detail</span>
-      <h3>还没有定位记录</h3>
-      <p>点击“获取位置”后保存观察，就能在地图里看到它。</p>
-    `;
-    selectedMapObservationId = "";
+    if (selectedItem) {
+      renderMapDetail(selectedItem);
+      return;
+    }
+    renderEmptyDetail();
     return;
   }
 
-  const activeItem =
-    locatedItems.find((item) => item.id === selectedMapObservationId) || locatedItems[0];
-  selectedMapObservationId = activeItem.id;
+  const activeItem = locatedItems.find((item) => item.id === selectedMapObservationId) || locatedItems[0];
+  const detailItem = selectedItem || activeItem;
+  selectedMapObservationId = detailItem.id;
 
   const locations = locatedItems.map(observationLocation);
   const minLat = Math.min(...locations.map((location) => location.latitude));
@@ -194,13 +233,13 @@ function renderMap(items = []) {
   const latSpan = Math.max(maxLat - minLat, 0.0008);
   const lngSpan = Math.max(maxLng - minLng, 0.0008);
 
-  const activeLocation = observationLocation(activeItem);
+  const activeLocation = observationLocation(detailItem) || observationLocation(activeItem);
   const pins = locatedItems
     .map((item) => {
       const location = observationLocation(item);
       const x = 8 + ((location.longitude - minLng) / lngSpan) * 84;
       const y = 92 - ((location.latitude - minLat) / latSpan) * 84;
-      const activeClass = item.id === activeItem.id ? " is-active" : "";
+      const activeClass = item.id === detailItem.id ? " is-active" : "";
       return `
         <button
           class="map-pin${activeClass}"
@@ -230,44 +269,124 @@ function renderMap(items = []) {
     mapCanvas.classList.remove("is-loading");
   });
 
-  renderMapDetail(activeItem);
+  renderMapDetail(detailItem);
 }
 
 function renderMapDetail(item) {
   const location = observationLocation(item);
-  const accuracyText = location.accuracy ? `精度约 ${Math.round(location.accuracy)} 米` : "未记录精度";
+  const accuracyText = location?.accuracy ? `精度约 ${Math.round(location.accuracy)} 米` : "未记录精度";
+  const locationMarkup = location
+    ? `
+      <p>${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}</p>
+      <p>${accuracyText}</p>
+    `
+    : "<p>未记录位置</p>";
+  const mapLinkMarkup = location
+    ? `<a class="map-link" href="${mapUrl(location)}" target="_blank" rel="noreferrer">打开地图</a>`
+    : "";
   mapDetail.innerHTML = `
     <img src="${escapeHtml(item.photo || "assets/specimen.svg")}" alt="${escapeHtml(item.name)} 观察照片">
     <span class="history-meta">${new Date(item.createdAt).toLocaleString("zh-CN")}</span>
     <h3>${escapeHtml(item.name)}</h3>
-    <p>${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}</p>
-    <p>${accuracyText}</p>
+    ${locationMarkup}
     <p>${escapeHtml(item.note || "无笔记")}</p>
-    <a class="map-link" href="${mapUrl(location)}" target="_blank" rel="noreferrer">打开地图</a>
+    <form class="edit-form" data-observation-id="${escapeHtml(item.id)}">
+      <label>
+        <span class="history-meta">花名</span>
+        <input name="name" value="${escapeHtml(item.name)}" autocomplete="off">
+      </label>
+      <label>
+        <span class="history-meta">笔记</span>
+        <textarea name="note" rows="3">${escapeHtml(item.note || "")}</textarea>
+      </label>
+      <div class="detail-actions">
+        <button class="map-link" type="submit">保存修改</button>
+        <button class="map-link danger-action" type="button" data-delete-observation="${escapeHtml(item.id)}">删除记录</button>
+      </div>
+    </form>
+    ${mapLinkMarkup}
   `;
+}
+
+function renderEmptyDetail() {
+  mapDetail.innerHTML = `
+    <span class="history-meta">Map Detail</span>
+    <h3>还没有记录</h3>
+    <p>保存观察后，可以在这里编辑花名、笔记或删除单条记录。</p>
+  `;
+  selectedMapObservationId = "";
+}
+
+function updateLocalObservation(updatedObservation) {
+  const items = loadLocalObservations().map((item) =>
+    item.id === updatedObservation.id ? updatedObservation : item,
+  );
+  saveLocalObservations(items);
+  renderHistory(items);
+}
+
+function removeLocalObservation(observationId) {
+  const items = loadLocalObservations().filter((item) => item.id !== observationId);
+  if (selectedMapObservationId === observationId) {
+    selectedMapObservationId = "";
+  }
+  saveLocalObservations(items);
+  renderHistory(items);
 }
 
 async function refreshHistory() {
   const localItems = loadLocalObservations();
+  const deletedIds = loadDeletedObservationIds();
   try {
-    const cloudItems = await fetchCloudObservations();
-    const cloudIds = new Set(cloudItems.map((item) => item.id));
-    const localOnlyItems = localItems.filter((item) => item.id && !cloudIds.has(item.id));
-    const syncedItems = [];
-
-    for (const item of localOnlyItems) {
+    for (const observationId of [...deletedIds]) {
       try {
-        await saveCloudObservation(item);
-        syncedItems.push(item);
+        await deleteCloudObservation(observationId);
+        deletedIds.delete(observationId);
+      } catch {
+        break;
+      }
+    }
+    saveDeletedObservationIds(deletedIds);
+
+    const activeLocalItems = localItems.filter((item) => !deletedIds.has(item.id));
+    const cloudItems = (await fetchCloudObservations()).filter((item) => !deletedIds.has(item.id));
+    const pendingItems = activeLocalItems.filter((item) => item.pendingSync);
+    const syncedPendingItems = [];
+
+    for (const item of pendingItems) {
+      try {
+        const syncedItem = cleanObservation(item);
+        await updateCloudObservation(syncedItem);
+        syncedPendingItems.push(syncedItem);
       } catch {
         break;
       }
     }
 
-    const mergedItems = mergeObservations([...syncedItems, ...cloudItems], localItems);
+    const syncedPendingIds = new Set(syncedPendingItems.map((item) => item.id));
+    const unresolvedPendingItems = pendingItems.filter((item) => !syncedPendingIds.has(item.id));
+    const cloudIds = new Set(cloudItems.map((item) => item.id));
+    const localOnlyItems = activeLocalItems.filter((item) => item.id && !cloudIds.has(item.id) && !item.pendingSync);
+    const syncedItems = [];
+
+    for (const item of localOnlyItems) {
+      try {
+        const syncedItem = cleanObservation(item);
+        await saveCloudObservation(syncedItem);
+        syncedItems.push(syncedItem);
+      } catch {
+        break;
+      }
+    }
+
+    const mergedItems = mergeObservations(
+      [...unresolvedPendingItems, ...syncedPendingItems, ...syncedItems, ...cloudItems],
+      activeLocalItems,
+    );
     saveLocalObservations(mergedItems);
     renderHistory(mergedItems);
-    networkStatus.textContent = localOnlyItems.length === syncedItems.length ? "云端已同步" : "本机记录已保留";
+    networkStatus.textContent =
+      localOnlyItems.length === syncedItems.length && !unresolvedPendingItems.length ? "云端已同步" : "本机记录已保留";
   } catch {
     renderHistory(localItems);
     networkStatus.textContent = navigator.onLine ? "云端连接失败" : "离线可记录";
@@ -406,6 +525,57 @@ mapCanvas.addEventListener("click", (event) => {
   if (!pin) return;
   selectedMapObservationId = pin.dataset.observationId;
   renderHistory(loadLocalObservations());
+});
+
+historyList.addEventListener("click", (event) => {
+  const item = event.target.closest(".history-item");
+  if (!item) return;
+  selectedMapObservationId = item.dataset.observationId;
+  renderHistory(loadLocalObservations());
+});
+
+mapDetail.addEventListener("submit", async (event) => {
+  const form = event.target.closest(".edit-form");
+  if (!form) return;
+  event.preventDefault();
+
+  const observation = loadLocalObservations().find((item) => item.id === form.dataset.observationId);
+  if (!observation) return;
+
+  const updatedObservation = {
+    ...observation,
+    name: form.elements.name.value.trim() || observation.name,
+    note: form.elements.note.value.trim(),
+    pendingSync: true,
+  };
+
+  updateLocalObservation(updatedObservation);
+  try {
+    await updateCloudObservation(cleanObservation(updatedObservation));
+    updateLocalObservation(cleanObservation(updatedObservation));
+    networkStatus.textContent = "修改已同步";
+  } catch {
+    networkStatus.textContent = "修改已本机保存";
+  }
+});
+
+mapDetail.addEventListener("click", async (event) => {
+  const deleteButton = event.target.closest("[data-delete-observation]");
+  if (!deleteButton) return;
+
+  const observationId = deleteButton.dataset.deleteObservation;
+  const deletedIds = loadDeletedObservationIds();
+  deletedIds.add(observationId);
+  saveDeletedObservationIds(deletedIds);
+  removeLocalObservation(observationId);
+  try {
+    await deleteCloudObservation(observationId);
+    deletedIds.delete(observationId);
+    saveDeletedObservationIds(deletedIds);
+    networkStatus.textContent = "记录已删除";
+  } catch {
+    networkStatus.textContent = "已删除本机记录";
+  }
 });
 
 window.addEventListener("online", updateNetworkStatus);

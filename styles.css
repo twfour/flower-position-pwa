@@ -416,6 +416,7 @@ textarea {
 .map-link {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   min-height: 40px;
   margin-top: 8px;
   padding: 0 14px;
@@ -427,6 +428,33 @@ textarea {
   font-size: 0.86rem;
   font-weight: 800;
   text-decoration: none;
+}
+
+.danger-action {
+  color: #9f3440;
+}
+
+.edit-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.edit-form input,
+.edit-form textarea {
+  width: 100%;
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 253, 248, 0.8);
+  color: var(--ink);
+}
+
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .history-list {
@@ -443,6 +471,12 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 253, 248, 0.66);
+  cursor: pointer;
+}
+
+.history-item.is-active {
+  border-color: rgba(79, 111, 82, 0.55);
+  box-shadow: 0 10px 24px rgba(79, 111, 82, 0.16);
 }
 
 .history-item img {

@@ -7,6 +7,7 @@
 - 手机相机拍照或相册导入
 - 浏览器 Geolocation 定位
 - 地图视图展示带经纬度的观察点，支持点选查看详情并打开外部地图
+- 记录详情支持编辑花名、笔记，并删除单条观察
 - 花卉识别结果展示，当前为前端模拟候选，后续可替换为真实模型接口
 - 观察笔记与记录优先保存到后端 SQLite，离线或 API 不可用时回落到 `localStorage`
 - 上传前会在浏览器内压缩照片，降低移动端拍照后保存失败的概率
@@ -27,6 +28,8 @@ python3 server.py
 - `GET /api/health`：健康检查
 - `GET /api/observations`：读取观察记录
 - `POST /api/observations`：保存观察记录
+- `PUT /api/observations/{id}`：更新单条观察记录
+- `DELETE /api/observations/{id}`：删除单条观察记录
 - `DELETE /api/observations`：清空观察记录
 
 ## Render 部署

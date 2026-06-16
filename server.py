@@ -94,6 +94,13 @@ def save_observation(item):
         conn.commit()
 
 
+def delete_observation(observation_id):
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.execute("DELETE FROM observations WHERE id = ?", (observation_id,))
+        conn.commit()
+    return cursor.rowcount > 0
+
+
 def clear_observations():
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("DELETE FROM observations")
@@ -140,12 +147,37 @@ class Handler(SimpleHTTPRequestHandler):
 
         self.send_json({"observation": item}, status=201)
 
-    def do_DELETE(self):
+    def do_PUT(self):
         path = urlparse(self.path).path
-        if path != "/api/observations":
+        observation_id = path.removeprefix("/api/observations/") if path.startswith("/api/observations/") else ""
+        if not observation_id:
             self.send_error(404)
             return
-        clear_observations()
+
+        try:
+            payload = self.read_json_body()
+            item = normalize_observation(payload)
+            item["id"] = observation_id[:80]
+            save_observation(item)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, status=400)
+            return
+
+        self.send_json({"observation": item})
+
+    def do_DELETE(self):
+        path = urlparse(self.path).path
+        if path == "/api/observations":
+            clear_observations()
+            self.send_json({"ok": True})
+            return
+
+        observation_id = path.removeprefix("/api/observations/") if path.startswith("/api/observations/") else ""
+        if not observation_id:
+            self.send_error(404)
+            return
+
+        delete_observation(observation_id)
         self.send_json({"ok": True})
 
     def read_json_body(self):
