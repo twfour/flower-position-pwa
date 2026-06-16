@@ -1,15 +1,23 @@
 import json
 import os
 import sqlite3
+import base64
+import mimetypes
+import uuid
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
+from urllib.parse import urlencode
+from urllib.request import Request
+from urllib.request import urlopen
 
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("DATA_DIR", ROOT / "data"))
 DB_PATH = DATA_DIR / "observations.sqlite3"
 MAX_BODY_BYTES = 12 * 1024 * 1024
+PLANTNET_API_KEY = os.environ.get("PLANTNET_API_KEY", "")
+PLANTNET_PROJECT = os.environ.get("PLANTNET_PROJECT", "all")
 
 
 def init_db():
@@ -107,6 +115,127 @@ def clear_observations():
         conn.commit()
 
 
+def identify_plant(photo_data_url):
+    if not PLANTNET_API_KEY:
+        raise ValueError("PlantNet API key is not configured")
+
+    image_bytes, mime_type = decode_data_url(photo_data_url)
+    fields = [("organs", "flower")]
+    files = [("images", "observation.jpg", mime_type, image_bytes)]
+    body, content_type = encode_multipart(fields, files)
+    query = urlencode(
+        {
+            "api-key": PLANTNET_API_KEY,
+            "include-related-images": "false",
+            "no-reject": "false",
+            "lang": "zh",
+        }
+    )
+    url = f"https://my-api.plantnet.org/v2/identify/{PLANTNET_PROJECT}?{query}"
+    request = Request(
+        url,
+        data=body,
+        headers={
+            "Accept": "application/json",
+            "Content-Type": content_type,
+        },
+        method="POST",
+    )
+
+    with urlopen(request, timeout=30) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    return normalize_identification(payload)
+
+
+def decode_data_url(data_url):
+    if not isinstance(data_url, str) or "," not in data_url:
+        raise ValueError("Missing image")
+    header, encoded = data_url.split(",", 1)
+    if ";base64" not in header:
+        raise ValueError("Unsupported image encoding")
+    mime_type = header.removeprefix("data:").split(";", 1)[0] or "image/jpeg"
+    if not mime_type.startswith("image/"):
+        raise ValueError("Unsupported image type")
+    try:
+        image_bytes = base64.b64decode(encoded, validate=True)
+    except ValueError as exc:
+        raise ValueError("Invalid image data") from exc
+    if not image_bytes:
+        raise ValueError("Empty image")
+    return image_bytes, mime_type
+
+
+def encode_multipart(fields, files):
+    boundary = f"----flower-position-{uuid.uuid4().hex}"
+    chunks = []
+    for name, value in fields:
+        chunks.extend(
+            [
+                f"--{boundary}\r\n".encode("utf-8"),
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"),
+                str(value).encode("utf-8"),
+                b"\r\n",
+            ]
+        )
+    for name, filename, mime_type, data in files:
+        safe_type = mime_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        chunks.extend(
+            [
+                f"--{boundary}\r\n".encode("utf-8"),
+                f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'.encode("utf-8"),
+                f"Content-Type: {safe_type}\r\n\r\n".encode("utf-8"),
+                data,
+                b"\r\n",
+            ]
+        )
+    chunks.append(f"--{boundary}--\r\n".encode("utf-8"))
+    return b"".join(chunks), f"multipart/form-data; boundary={boundary}"
+
+
+def normalize_identification(payload):
+    results = payload.get("results") or []
+    if not results:
+        raise ValueError("No plant candidate returned")
+
+    best = results[0]
+    species = best.get("species") or {}
+    scientific_name = species.get("scientificNameWithoutAuthor") or species.get("scientificName") or "Unknown species"
+    common_names = species.get("commonNames") or []
+    family = species.get("family", {}).get("scientificNameWithoutAuthor") or species.get("family", {}).get("scientificName")
+    genus = species.get("genus", {}).get("scientificNameWithoutAuthor") or species.get("genus", {}).get("scientificName")
+
+    traits = []
+    if family:
+      traits.append(f"科：{family}")
+    if genus:
+      traits.append(f"属：{genus}")
+    if common_names:
+      traits.append(f"常见名：{', '.join(common_names[:3])}")
+
+    suggestions = []
+    for result in results[:5]:
+        result_species = result.get("species") or {}
+        suggestions.append(
+            {
+                "name": (result_species.get("commonNames") or [None])[0]
+                or result_species.get("scientificNameWithoutAuthor")
+                or "未知植物",
+                "latin": result_species.get("scientificNameWithoutAuthor")
+                or result_species.get("scientificName")
+                or "",
+                "confidence": float(result.get("score") or 0),
+            }
+        )
+
+    return {
+        "name": common_names[0] if common_names else scientific_name,
+        "latin": scientific_name,
+        "confidence": float(best.get("score") or 0),
+        "traits": traits or ["PlantNet 返回了识别候选，可在保存后手动修正。"],
+        "suggestions": suggestions,
+    }
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
@@ -133,6 +262,20 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
+        if path == "/api/identify":
+            try:
+                payload = self.read_json_body()
+                result = identify_plant(payload.get("photo"))
+            except ValueError as exc:
+                status = 503 if "API key" in str(exc) else 400
+                self.send_json({"error": str(exc)}, status=status)
+                return
+            except Exception:
+                self.send_json({"error": "Plant identification failed"}, status=502)
+                return
+            self.send_json({"result": result})
+            return
+
         if path != "/api/observations":
             self.send_error(404)
             return

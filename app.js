@@ -111,6 +111,22 @@ async function saveCloudObservation(observation) {
   return response.json();
 }
 
+async function identifyPlant(photo) {
+  const response = await fetch("/api/identify", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ photo }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "识别失败");
+  }
+  return data.result;
+}
+
 async function updateCloudObservation(observation) {
   const response = await fetch(`${API_URL}/${encodeURIComponent(observation.id)}`, {
     method: "PUT",
@@ -463,17 +479,31 @@ locateButton.addEventListener("click", () => {
   );
 });
 
-identifyButton.addEventListener("click", () => {
+identifyButton.addEventListener("click", async () => {
   if (!currentPhoto) {
     resultEmpty.textContent = "请先拍照或选择一张图片。";
     return;
   }
 
-  const index = Math.abs(currentPhoto.length + Date.now()) % candidates.length;
-  setResult({
-    ...candidates[index],
-    confidence: 0.72 + Math.random() * 0.2,
-  });
+  identifyButton.disabled = true;
+  identifyButton.textContent = "识别中";
+  resultEmpty.hidden = false;
+  resultEmpty.textContent = "正在识别植物...";
+
+  try {
+    const result = await identifyPlant(currentPhoto);
+    setResult(result);
+  } catch (error) {
+    resultCard.hidden = true;
+    resultEmpty.hidden = false;
+    resultEmpty.textContent =
+      error.message === "PlantNet API key is not configured"
+        ? "还没有配置 PlantNet API key。可以先保存观察，稍后在 Render 环境变量里添加 PLANTNET_API_KEY。"
+        : `识别失败：${error.message}`;
+  } finally {
+    identifyButton.disabled = false;
+    identifyButton.textContent = "识别";
+  }
 });
 
 saveButton.addEventListener("click", async () => {
