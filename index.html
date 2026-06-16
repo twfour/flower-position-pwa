@@ -81,6 +81,32 @@
           <label class="notes-label" for="noteInput">观察笔记</label>
           <textarea id="noteInput" rows="4" placeholder="花色、环境、气味、枝叶形态..."></textarea>
           <button id="saveButton" class="save-button" type="button">保存观察</button>
+
+          <div class="proximity-card" aria-live="polite">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Nearby Alert</p>
+                <h2>靠近提醒</h2>
+              </div>
+              <button id="proximityToggle" class="ghost-button" type="button">开启</button>
+            </div>
+            <div class="proximity-controls">
+              <label>
+                <span class="history-meta">半径</span>
+                <select id="proximityRadius">
+                  <option value="50">50 米</option>
+                  <option value="100" selected>100 米</option>
+                  <option value="200">200 米</option>
+                  <option value="500">500 米</option>
+                </select>
+              </label>
+              <div>
+                <span class="history-meta">状态</span>
+                <strong id="proximityStatus">未开启</strong>
+              </div>
+            </div>
+            <div id="nearbyList" class="nearby-list"></div>
+          </div>
         </section>
 
         <section class="history-panel" aria-labelledby="historyTitle">

@@ -333,6 +333,73 @@ textarea {
   width: 100%;
 }
 
+.proximity-card {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.proximity-card h2 {
+  margin-bottom: 0;
+  font-size: 1.35rem;
+}
+
+.proximity-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.proximity-controls label,
+.proximity-controls div {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 253, 248, 0.56);
+}
+
+.proximity-controls select {
+  width: 100%;
+  margin-top: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.proximity-controls strong {
+  display: block;
+  margin-top: 6px;
+}
+
+.nearby-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.nearby-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid rgba(79, 111, 82, 0.35);
+  border-radius: 8px;
+  background: rgba(112, 140, 87, 0.12);
+  color: var(--ink);
+  text-align: left;
+}
+
+.nearby-item span {
+  color: var(--moss);
+  font-family: Avenir, "Gill Sans", sans-serif;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .map-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.6fr);
@@ -558,9 +625,11 @@ textarea {
   }
 
   .actions,
-  .status-grid {
+  .status-grid,
+  .proximity-controls {
     align-items: stretch;
     flex-direction: column;
+    grid-template-columns: 1fr;
   }
 
   .map-canvas,

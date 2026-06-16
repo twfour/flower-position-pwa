@@ -15,12 +15,17 @@ const flowerLatin = document.querySelector("#flowerLatin");
 const flowerTraits = document.querySelector("#flowerTraits");
 const suggestionsList = document.createElement("div");
 const noteInput = document.querySelector("#noteInput");
+const proximityToggle = document.querySelector("#proximityToggle");
+const proximityRadius = document.querySelector("#proximityRadius");
+const proximityStatus = document.querySelector("#proximityStatus");
+const nearbyList = document.querySelector("#nearbyList");
 const mapCanvas = document.querySelector("#mapCanvas");
 const mapDetail = document.querySelector("#mapDetail");
 const historyList = document.querySelector("#historyList");
 
 const STORAGE_KEY = "flower-position-observations";
 const DELETED_STORAGE_KEY = "flower-position-deleted-observations";
+const PROXIMITY_STORAGE_KEY = "flower-position-proximity-settings";
 const API_URL = "/api/observations";
 
 suggestionsList.className = "suggestions-list";
@@ -31,6 +36,10 @@ let currentLocation = null;
 let currentResult = null;
 let deferredInstallPrompt = null;
 let selectedMapObservationId = "";
+let proximityWatchId = null;
+let lastProximityPosition = null;
+let lastNearbyIds = new Set();
+let lastNotificationTimes = new Map();
 
 function loadLocalObservations() {
   try {
@@ -54,6 +63,22 @@ function loadDeletedObservationIds() {
 
 function saveDeletedObservationIds(ids) {
   localStorage.setItem(DELETED_STORAGE_KEY, JSON.stringify([...ids]));
+}
+
+function loadProximitySettings() {
+  try {
+    return {
+      enabled: false,
+      radius: 100,
+      ...JSON.parse(localStorage.getItem(PROXIMITY_STORAGE_KEY) || "{}"),
+    };
+  } catch {
+    return { enabled: false, radius: 100 };
+  }
+}
+
+function saveProximitySettings(settings) {
+  localStorage.setItem(PROXIMITY_STORAGE_KEY, JSON.stringify(settings));
 }
 
 function cleanObservation(observation) {
@@ -176,6 +201,10 @@ function renderHistory(items = loadLocalObservations()) {
       `;
     })
     .join("");
+
+  if (proximityWatchId !== null && lastProximityPosition) {
+    checkNearby({ coords: lastProximityPosition });
+  }
 }
 
 function observationLocation(item) {
@@ -188,6 +217,18 @@ function observationLocation(item) {
     longitude: Number(location.longitude),
     accuracy: Number(location.accuracy || 0),
   };
+}
+
+function distanceMeters(a, b) {
+  const earthRadius = 6371000;
+  const lat1 = (a.latitude * Math.PI) / 180;
+  const lat2 = (b.latitude * Math.PI) / 180;
+  const deltaLat = ((b.latitude - a.latitude) * Math.PI) / 180;
+  const deltaLng = ((b.longitude - a.longitude) * Math.PI) / 180;
+  const h =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) ** 2;
+  return 2 * earthRadius * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
 function mapUrl(location) {
@@ -312,6 +353,113 @@ function renderEmptyDetail() {
     <p>保存观察后，可以在这里编辑花名、笔记或删除单条记录。</p>
   `;
   selectedMapObservationId = "";
+}
+
+function renderNearby(items) {
+  if (!items.length) {
+    nearbyList.innerHTML = "";
+    return;
+  }
+
+  nearbyList.innerHTML = items
+    .map(
+      (item) => `
+        <button class="nearby-item" type="button" data-observation-id="${escapeHtml(item.id)}">
+          <strong>${escapeHtml(item.name)}</strong>
+          <span>${Math.round(item.distance)} 米</span>
+        </button>
+      `,
+    )
+    .join("");
+}
+
+function checkNearby(position) {
+  const settings = loadProximitySettings();
+  const current = {
+    latitude: position.coords.latitude,
+    longitude: position.coords.longitude,
+  };
+  lastProximityPosition = current;
+
+  const nearbyItems = loadLocalObservations()
+    .map((item) => {
+      const location = observationLocation(item);
+      if (!location) return null;
+      return {
+        ...item,
+        distance: distanceMeters(current, location),
+      };
+    })
+    .filter((item) => item && item.distance <= settings.radius)
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, 6);
+
+  lastNearbyIds = new Set(nearbyItems.map((item) => item.id));
+  proximityStatus.textContent = nearbyItems.length
+    ? `附近 ${nearbyItems.length} 条`
+    : `巡航中，${settings.radius} 米`;
+  renderNearby(nearbyItems);
+  notifyNearby(nearbyItems);
+}
+
+function notifyNearby(items) {
+  if (!items.length || !("Notification" in window) || Notification.permission !== "granted") return;
+
+  const now = Date.now();
+  const freshItems = items.filter((item) => now - (lastNotificationTimes.get(item.id) || 0) > 30 * 60 * 1000);
+  if (!freshItems.length) return;
+
+  const closest = freshItems[0];
+  lastNotificationTimes.set(closest.id, now);
+  new Notification("附近有记录过的花", {
+    body: `${closest.name}，约 ${Math.round(closest.distance)} 米`,
+    tag: `flower-nearby-${closest.id}`,
+  });
+}
+
+async function startProximityWatch() {
+  if (!("geolocation" in navigator)) {
+    proximityStatus.textContent = "此设备不支持定位";
+    return;
+  }
+
+  if ("Notification" in window && Notification.permission === "default") {
+    await Notification.requestPermission();
+  }
+
+  stopProximityWatch();
+  const settings = loadProximitySettings();
+  proximityToggle.textContent = "关闭";
+  proximityStatus.textContent = "定位中";
+  saveProximitySettings({ ...settings, enabled: true, radius: Number(proximityRadius.value) });
+  proximityWatchId = navigator.geolocation.watchPosition(
+    checkNearby,
+    () => {
+      proximityStatus.textContent = "定位不可用";
+    },
+    { enableHighAccuracy: true, maximumAge: 30000, timeout: 15000 },
+  );
+}
+
+function stopProximityWatch() {
+  if (proximityWatchId !== null) {
+    navigator.geolocation.clearWatch(proximityWatchId);
+    proximityWatchId = null;
+  }
+  lastNearbyIds = new Set();
+  proximityToggle.textContent = "开启";
+  proximityStatus.textContent = "未开启";
+  renderNearby([]);
+}
+
+function updateProximityUi() {
+  const settings = loadProximitySettings();
+  proximityRadius.value = String(settings.radius || 100);
+  if (settings.enabled) {
+    startProximityWatch();
+  } else {
+    stopProximityWatch();
+  }
 }
 
 function updateLocalObservation(updatedObservation) {
@@ -572,6 +720,32 @@ clearButton.addEventListener("click", async () => {
   }
 });
 
+proximityToggle.addEventListener("click", () => {
+  const settings = loadProximitySettings();
+  if (settings.enabled) {
+    saveProximitySettings({ ...settings, enabled: false });
+    stopProximityWatch();
+  } else {
+    startProximityWatch();
+  }
+});
+
+proximityRadius.addEventListener("change", () => {
+  const settings = loadProximitySettings();
+  saveProximitySettings({ ...settings, radius: Number(proximityRadius.value) });
+  if (settings.enabled && lastProximityPosition) {
+    checkNearby({ coords: lastProximityPosition });
+  }
+});
+
+nearbyList.addEventListener("click", (event) => {
+  const item = event.target.closest(".nearby-item");
+  if (!item) return;
+  selectedMapObservationId = item.dataset.observationId;
+  renderHistory(loadLocalObservations());
+  document.querySelector(".history-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
 mapCanvas.addEventListener("click", (event) => {
   const pin = event.target.closest(".map-pin");
   if (!pin) return;
@@ -655,3 +829,4 @@ if ("serviceWorker" in navigator) {
 
 updateNetworkStatus();
 refreshHistory();
+updateProximityUi();
