@@ -8,6 +8,7 @@
 - 浏览器 Geolocation 定位
 - 花卉识别结果展示，当前为前端模拟候选，后续可替换为真实模型接口
 - 观察笔记与记录优先保存到后端 SQLite，离线或 API 不可用时回落到 `localStorage`
+- 上传前会在浏览器内压缩照片，降低移动端拍照后保存失败的概率
 - PWA manifest、安装入口、离线缓存
 - 响应式移动端布局
 - Render 部署配置
@@ -36,7 +37,7 @@ python3 server.py
 - Start Command: `python3 server.py`
 - Environment Variable: `DATA_DIR=/opt/render/project/src/data`
 
-注意：Render 上的浏览器定位需要 HTTPS，Render 默认域名满足这个要求。SQLite 文件适合个人小工具和演示；如果要长期稳定保存、跨实例扩展或避免重启/重新部署导致数据风险，建议改接 Render PostgreSQL。
+注意：Render 上的浏览器定位需要 HTTPS，Render 默认域名满足这个要求。Render 默认文件系统是临时的，普通刷新不应该丢记录，但重新部署、服务重启或实例重建可能丢 SQLite 文件。要长期保存，请把服务升级到 paid web service 后添加 Persistent Disk，并设置 `DATA_DIR=/var/data`；如果要跨实例扩展，建议改接 PostgreSQL。
 
 ## 后续接入真实识别
 

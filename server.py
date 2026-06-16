@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("DATA_DIR", ROOT / "data"))
 DB_PATH = DATA_DIR / "observations.sqlite3"
-MAX_BODY_BYTES = 7 * 1024 * 1024
+MAX_BODY_BYTES = 12 * 1024 * 1024
 
 
 def init_db():
@@ -111,7 +111,13 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
         if path == "/api/health":
-            self.send_json({"ok": True})
+            self.send_json(
+                {
+                    "ok": True,
+                    "dbPath": str(DB_PATH),
+                    "observations": len(list_observations()),
+                }
+            )
             return
         if path == "/api/observations":
             self.send_json({"observations": list_observations()})
@@ -147,7 +153,7 @@ class Handler(SimpleHTTPRequestHandler):
         if size <= 0:
             raise ValueError("Missing request body")
         if size > MAX_BODY_BYTES:
-            raise ValueError("Request body is too large")
+            raise ValueError("Request body is too large; try a smaller photo")
         raw = self.rfile.read(size)
         try:
             return json.loads(raw.decode("utf-8"))

@@ -95,6 +95,18 @@ async function clearCloudObservations() {
   if (!response.ok) throw new Error("Failed to clear observations");
 }
 
+function mergeObservations(primary, fallback) {
+  const seen = new Set();
+  return [...primary, ...fallback]
+    .filter((item) => {
+      if (!item?.id || seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    })
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, 100);
+}
+
 function updateNetworkStatus() {
   networkStatus.textContent = navigator.onLine ? "在线" : "离线可记录";
 }
@@ -126,12 +138,29 @@ function renderHistory(items = loadLocalObservations()) {
 }
 
 async function refreshHistory() {
+  const localItems = loadLocalObservations();
   try {
     const cloudItems = await fetchCloudObservations();
-    saveLocalObservations(cloudItems);
-    renderHistory(cloudItems);
+    const cloudIds = new Set(cloudItems.map((item) => item.id));
+    const localOnlyItems = localItems.filter((item) => item.id && !cloudIds.has(item.id));
+    const syncedItems = [];
+
+    for (const item of localOnlyItems) {
+      try {
+        await saveCloudObservation(item);
+        syncedItems.push(item);
+      } catch {
+        break;
+      }
+    }
+
+    const mergedItems = mergeObservations([...syncedItems, ...cloudItems], localItems);
+    saveLocalObservations(mergedItems);
+    renderHistory(mergedItems);
+    networkStatus.textContent = localOnlyItems.length === syncedItems.length ? "云端已同步" : "本机记录已保留";
   } catch {
-    renderHistory();
+    renderHistory(localItems);
+    networkStatus.textContent = navigator.onLine ? "云端连接失败" : "离线可记录";
   }
 }
 
@@ -145,19 +174,41 @@ function setResult(result) {
   flowerTraits.innerHTML = result.traits.map((trait) => `<li>${trait}</li>`).join("");
 }
 
-photoInput.addEventListener("change", () => {
+function resizeImage(file, maxSize = 1400, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("error", reject);
+    reader.addEventListener("load", () => {
+      const image = new Image();
+      image.addEventListener("error", reject);
+      image.addEventListener("load", () => {
+        const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(image.width * scale);
+        canvas.height = Math.round(image.height * scale);
+        const context = canvas.getContext("2d");
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      });
+      image.src = reader.result;
+    });
+    reader.readAsDataURL(file);
+  });
+}
+
+photoInput.addEventListener("change", async () => {
   const [file] = photoInput.files;
   if (!file) return;
 
-  const reader = new FileReader();
-  reader.addEventListener("load", () => {
-    currentPhoto = reader.result;
+  try {
+    currentPhoto = await resizeImage(file);
     photoPreview.src = currentPhoto;
     resultEmpty.hidden = false;
     resultCard.hidden = true;
     currentResult = null;
-  });
-  reader.readAsDataURL(file);
+  } catch {
+    resultEmpty.textContent = "图片读取失败，请换一张照片。";
+  }
 });
 
 locateButton.addEventListener("click", () => {
@@ -223,9 +274,10 @@ saveButton.addEventListener("click", async () => {
 
   try {
     await saveCloudObservation(observation);
+    networkStatus.textContent = "云端已保存";
     await refreshHistory();
   } catch {
-    networkStatus.textContent = "已本机保存";
+    networkStatus.textContent = "云端保存失败，本机已保留";
   }
 });
 
