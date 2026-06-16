@@ -17,6 +17,7 @@ const noteInput = document.querySelector("#noteInput");
 const historyList = document.querySelector("#historyList");
 
 const STORAGE_KEY = "flower-position-observations";
+const API_URL = "/api/observations";
 
 const candidates = [
   {
@@ -46,7 +47,7 @@ let currentLocation = null;
 let currentResult = null;
 let deferredInstallPrompt = null;
 
-function loadObservations() {
+function loadLocalObservations() {
   try {
     return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
   } catch {
@@ -54,16 +55,51 @@ function loadObservations() {
   }
 }
 
-function saveObservations(items) {
+function saveLocalObservations(items) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+async function fetchCloudObservations() {
+  const response = await fetch(API_URL, {
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) throw new Error("Failed to load observations");
+  const data = await response.json();
+  return data.observations || [];
+}
+
+async function saveCloudObservation(observation) {
+  const response = await fetch(API_URL, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ observation }),
+  });
+  if (!response.ok) throw new Error("Failed to save observation");
+  return response.json();
+}
+
+async function clearCloudObservations() {
+  const response = await fetch(API_URL, { method: "DELETE" });
+  if (!response.ok) throw new Error("Failed to clear observations");
 }
 
 function updateNetworkStatus() {
   networkStatus.textContent = navigator.onLine ? "在线" : "离线可记录";
 }
 
-function renderHistory() {
-  const items = loadObservations();
+function renderHistory(items = loadLocalObservations()) {
   if (!items.length) {
     historyList.innerHTML = '<div class="empty-state">还没有保存记录。</div>';
     return;
@@ -76,17 +112,27 @@ function renderHistory() {
         : "未记录位置";
       return `
         <article class="history-item">
-          <img src="${item.photo || "assets/specimen.svg"}" alt="${item.name} 观察照片">
+          <img src="${escapeHtml(item.photo || "assets/specimen.svg")}" alt="${escapeHtml(item.name)} 观察照片">
           <div>
             <span class="history-meta">${new Date(item.createdAt).toLocaleString("zh-CN")}</span>
-            <h3>${item.name}</h3>
+            <h3>${escapeHtml(item.name)}</h3>
             <p>${location}</p>
-            <p>${item.note || "无笔记"}</p>
+            <p>${escapeHtml(item.note || "无笔记")}</p>
           </div>
         </article>
       `;
     })
     .join("");
+}
+
+async function refreshHistory() {
+  try {
+    const cloudItems = await fetchCloudObservations();
+    saveLocalObservations(cloudItems);
+    renderHistory(cloudItems);
+  } catch {
+    renderHistory();
+  }
 }
 
 function setResult(result) {
@@ -150,7 +196,7 @@ identifyButton.addEventListener("click", () => {
   });
 });
 
-saveButton.addEventListener("click", () => {
+saveButton.addEventListener("click", async () => {
   const result = currentResult || {
     name: "待识别花卉",
     latin: "Pending identification",
@@ -158,8 +204,7 @@ saveButton.addEventListener("click", () => {
     traits: ["照片已保存，可稍后补充识别结果"],
   };
 
-  const items = loadObservations();
-  items.unshift({
+  const observation = {
     id: crypto.randomUUID(),
     createdAt: new Date().toISOString(),
     name: result.name,
@@ -169,15 +214,29 @@ saveButton.addEventListener("click", () => {
     photo: currentPhoto,
     location: currentLocation,
     note: noteInput.value.trim(),
-  });
-  saveObservations(items.slice(0, 60));
+  };
+  const items = loadLocalObservations();
+  items.unshift(observation);
+  saveLocalObservations(items.slice(0, 60));
   noteInput.value = "";
-  renderHistory();
+  renderHistory(items);
+
+  try {
+    await saveCloudObservation(observation);
+    await refreshHistory();
+  } catch {
+    networkStatus.textContent = "已本机保存";
+  }
 });
 
-clearButton.addEventListener("click", () => {
-  saveObservations([]);
+clearButton.addEventListener("click", async () => {
+  saveLocalObservations([]);
   renderHistory();
+  try {
+    await clearCloudObservations();
+  } catch {
+    networkStatus.textContent = "已清空本机";
+  }
 });
 
 window.addEventListener("online", updateNetworkStatus);
@@ -204,4 +263,4 @@ if ("serviceWorker" in navigator) {
 }
 
 updateNetworkStatus();
-renderHistory();
+refreshHistory();

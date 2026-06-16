@@ -1,23 +1,42 @@
 # 识花定位 PWA
 
-一个本地优先的识花定位 Progressive Web App。它可以拍照或选择图片、获取当前位置、生成识别候选、保存观察笔记，并通过 Service Worker 支持离线访问。
+一个本地优先的识花定位 Progressive Web App。它可以拍照或选择图片、获取当前位置、生成识别候选、保存观察笔记，并通过 Service Worker 支持离线访问。部署到 Render 后，会通过同源 API 把观察记录保存到后端 SQLite。
 
 ## 当前功能
 
 - 手机相机拍照或相册导入
 - 浏览器 Geolocation 定位
 - 花卉识别结果展示，当前为前端模拟候选，后续可替换为真实模型接口
-- 观察笔记与记录保存在 `localStorage`
+- 观察笔记与记录优先保存到后端 SQLite，离线或 API 不可用时回落到 `localStorage`
 - PWA manifest、安装入口、离线缓存
 - 响应式移动端布局
+- Render 部署配置
 
 ## 本地运行
 
 ```bash
-python3 -m http.server 8000
+python3 server.py
 ```
 
 然后打开 <http://127.0.0.1:8000/>。
+
+## API
+
+- `GET /api/health`：健康检查
+- `GET /api/observations`：读取观察记录
+- `POST /api/observations`：保存观察记录
+- `DELETE /api/observations`：清空观察记录
+
+## Render 部署
+
+项目包含 `render.yaml`，可以在 Render 里用 Blueprint 部署，也可以手动创建 Web Service：
+
+- Runtime: Python
+- Build Command: 留空
+- Start Command: `python3 server.py`
+- Environment Variable: `DATA_DIR=/opt/render/project/src/data`
+
+注意：Render 上的浏览器定位需要 HTTPS，Render 默认域名满足这个要求。SQLite 文件适合个人小工具和演示；如果要长期稳定保存、跨实例扩展或避免重启/重新部署导致数据风险，建议改接 Render PostgreSQL。
 
 ## 后续接入真实识别
 
