@@ -14,6 +14,8 @@ const flowerName = document.querySelector("#flowerName");
 const flowerLatin = document.querySelector("#flowerLatin");
 const flowerTraits = document.querySelector("#flowerTraits");
 const noteInput = document.querySelector("#noteInput");
+const mapCanvas = document.querySelector("#mapCanvas");
+const mapDetail = document.querySelector("#mapDetail");
 const historyList = document.querySelector("#historyList");
 
 const STORAGE_KEY = "flower-position-observations";
@@ -46,6 +48,7 @@ let currentPhoto = "";
 let currentLocation = null;
 let currentResult = null;
 let deferredInstallPrompt = null;
+let selectedMapObservationId = "";
 
 function loadLocalObservations() {
   try {
@@ -112,6 +115,8 @@ function updateNetworkStatus() {
 }
 
 function renderHistory(items = loadLocalObservations()) {
+  renderMap(items);
+
   if (!items.length) {
     historyList.innerHTML = '<div class="empty-state">还没有保存记录。</div>';
     return;
@@ -135,6 +140,84 @@ function renderHistory(items = loadLocalObservations()) {
       `;
     })
     .join("");
+}
+
+function observationLocation(item) {
+  const location = item?.location;
+  if (!location || Number.isNaN(Number(location.latitude)) || Number.isNaN(Number(location.longitude))) {
+    return null;
+  }
+  return {
+    latitude: Number(location.latitude),
+    longitude: Number(location.longitude),
+    accuracy: Number(location.accuracy || 0),
+  };
+}
+
+function mapUrl(location) {
+  return `https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`;
+}
+
+function renderMap(items = []) {
+  const locatedItems = items.filter((item) => observationLocation(item));
+
+  if (!locatedItems.length) {
+    mapCanvas.innerHTML = '<div class="map-empty">保存带定位的观察后，这里会出现点位分布。</div>';
+    mapDetail.innerHTML = `
+      <span class="history-meta">Map Detail</span>
+      <h3>还没有定位记录</h3>
+      <p>点击“获取位置”后保存观察，就能在地图里看到它。</p>
+    `;
+    selectedMapObservationId = "";
+    return;
+  }
+
+  const activeItem =
+    locatedItems.find((item) => item.id === selectedMapObservationId) || locatedItems[0];
+  selectedMapObservationId = activeItem.id;
+
+  const locations = locatedItems.map(observationLocation);
+  const minLat = Math.min(...locations.map((location) => location.latitude));
+  const maxLat = Math.max(...locations.map((location) => location.latitude));
+  const minLng = Math.min(...locations.map((location) => location.longitude));
+  const maxLng = Math.max(...locations.map((location) => location.longitude));
+  const latSpan = Math.max(maxLat - minLat, 0.0008);
+  const lngSpan = Math.max(maxLng - minLng, 0.0008);
+
+  mapCanvas.innerHTML = locatedItems
+    .map((item) => {
+      const location = observationLocation(item);
+      const x = 8 + ((location.longitude - minLng) / lngSpan) * 84;
+      const y = 92 - ((location.latitude - minLat) / latSpan) * 84;
+      const activeClass = item.id === activeItem.id ? " is-active" : "";
+      return `
+        <button
+          class="map-pin${activeClass}"
+          type="button"
+          style="--x: ${x.toFixed(2)}%; --y: ${y.toFixed(2)}%;"
+          data-observation-id="${escapeHtml(item.id)}"
+          aria-label="查看 ${escapeHtml(item.name)} 的位置"
+          title="${escapeHtml(item.name)}"
+        ></button>
+      `;
+    })
+    .join("");
+
+  renderMapDetail(activeItem);
+}
+
+function renderMapDetail(item) {
+  const location = observationLocation(item);
+  const accuracyText = location.accuracy ? `精度约 ${Math.round(location.accuracy)} 米` : "未记录精度";
+  mapDetail.innerHTML = `
+    <img src="${escapeHtml(item.photo || "assets/specimen.svg")}" alt="${escapeHtml(item.name)} 观察照片">
+    <span class="history-meta">${new Date(item.createdAt).toLocaleString("zh-CN")}</span>
+    <h3>${escapeHtml(item.name)}</h3>
+    <p>${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}</p>
+    <p>${accuracyText}</p>
+    <p>${escapeHtml(item.note || "无笔记")}</p>
+    <a class="map-link" href="${mapUrl(location)}" target="_blank" rel="noreferrer">打开地图</a>
+  `;
 }
 
 async function refreshHistory() {
@@ -289,6 +372,13 @@ clearButton.addEventListener("click", async () => {
   } catch {
     networkStatus.textContent = "已清空本机";
   }
+});
+
+mapCanvas.addEventListener("click", (event) => {
+  const pin = event.target.closest(".map-pin");
+  if (!pin) return;
+  selectedMapObservationId = pin.dataset.observationId;
+  renderHistory(loadLocalObservations());
 });
 
 window.addEventListener("online", updateNetworkStatus);

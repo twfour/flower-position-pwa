@@ -87,9 +87,17 @@
           <div class="panel-heading">
             <div>
               <p class="eyebrow">Local Log</p>
-              <h2 id="historyTitle">本机记录</h2>
+              <h2 id="historyTitle">观察地图</h2>
             </div>
             <button id="clearButton" class="ghost-button" type="button">清空</button>
+          </div>
+          <div class="map-layout">
+            <div class="map-canvas" id="mapCanvas" aria-label="花卉观察点位图"></div>
+            <aside class="map-detail" id="mapDetail" aria-live="polite">
+              <span class="history-meta">Map Detail</span>
+              <h3>还没有定位记录</h3>
+              <p>保存带位置的观察后，点位会出现在这里。</p>
+            </aside>
           </div>
           <div id="historyList" class="history-list"></div>
         </section>
