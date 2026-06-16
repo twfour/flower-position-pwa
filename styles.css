@@ -302,23 +302,46 @@ textarea {
   min-height: 360px;
   border: 1px solid rgba(79, 111, 82, 0.24);
   border-radius: 8px;
-  background:
-    linear-gradient(rgba(79, 111, 82, 0.13) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(79, 111, 82, 0.13) 1px, transparent 1px),
-    radial-gradient(circle at 24% 22%, rgba(213, 160, 58, 0.28), transparent 18rem),
-    radial-gradient(circle at 76% 72%, rgba(195, 93, 103, 0.16), transparent 16rem),
-    #eef0e5;
-  background-size: 42px 42px, 42px 42px, auto, auto, auto;
+  background: #dfe7d9;
   overflow: hidden;
 }
 
-.map-canvas::before {
-  content: "";
+.map-frame,
+.map-pin-layer,
+.map-fallback {
   position: absolute;
-  inset: 18px;
-  border: 1px dashed rgba(36, 37, 31, 0.18);
-  border-radius: 7px;
+  inset: 0;
+}
+
+.map-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  filter: saturate(0.85) contrast(0.96);
+}
+
+.map-pin-layer {
   pointer-events: none;
+}
+
+.map-fallback {
+  display: block;
+  inset: auto 12px 12px 12px;
+  padding: 24px;
+  border: 1px solid rgba(36, 37, 31, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 253, 248, 0.88);
+  color: var(--ink);
+  font-family: Avenir, "Gill Sans", sans-serif;
+  font-size: 0.84rem;
+  font-weight: 800;
+  line-height: 1.4;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.map-canvas:not(.is-offline) .map-fallback {
+  display: none;
 }
 
 .map-empty {
@@ -344,6 +367,8 @@ textarea {
   box-shadow: 0 10px 22px rgba(36, 37, 31, 0.24);
   transform: translate(-50%, -100%) rotate(-45deg);
   cursor: pointer;
+  pointer-events: auto;
+  z-index: 3;
 }
 
 .map-pin::after {

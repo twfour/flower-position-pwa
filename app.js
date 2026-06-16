@@ -158,6 +158,16 @@ function mapUrl(location) {
   return `https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`;
 }
 
+function embeddedMapUrl(center, locations) {
+  const lats = locations.map((location) => location.latitude);
+  const lngs = locations.map((location) => location.longitude);
+  const latSpan = Math.max(...lats) - Math.min(...lats);
+  const lngSpan = Math.max(...lngs) - Math.min(...lngs);
+  const spread = Math.max(latSpan, lngSpan);
+  const zoom = spread > 0.08 ? 12 : spread > 0.02 ? 14 : 16;
+  return `https://maps.google.com/maps?q=${center.latitude},${center.longitude}&z=${zoom}&output=embed`;
+}
+
 function renderMap(items = []) {
   const locatedItems = items.filter((item) => observationLocation(item));
 
@@ -184,7 +194,8 @@ function renderMap(items = []) {
   const latSpan = Math.max(maxLat - minLat, 0.0008);
   const lngSpan = Math.max(maxLng - minLng, 0.0008);
 
-  mapCanvas.innerHTML = locatedItems
+  const activeLocation = observationLocation(activeItem);
+  const pins = locatedItems
     .map((item) => {
       const location = observationLocation(item);
       const x = 8 + ((location.longitude - minLng) / lngSpan) * 84;
@@ -202,6 +213,22 @@ function renderMap(items = []) {
       `;
     })
     .join("");
+  mapCanvas.className = `map-canvas ${navigator.onLine ? "is-loading" : "is-offline"}`;
+  mapCanvas.innerHTML = `
+    <iframe
+      class="map-frame"
+      src="${embeddedMapUrl(activeLocation, locations)}"
+      title="观察地图底图"
+      loading="lazy"
+      referrerpolicy="no-referrer-when-downgrade"
+    ></iframe>
+    <div class="map-fallback">${navigator.onLine ? "地图加载中，点位仍可点击。" : "离线时显示点位网格，联网后会加载真实地图。"}</div>
+    <div class="map-pin-layer">${pins}</div>
+  `;
+  const frame = mapCanvas.querySelector(".map-frame");
+  frame.addEventListener("load", () => {
+    mapCanvas.classList.remove("is-loading");
+  });
 
   renderMapDetail(activeItem);
 }
