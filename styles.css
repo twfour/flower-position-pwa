@@ -275,6 +275,49 @@ button:hover,
   border-left: 3px solid var(--fern);
 }
 
+.suggestions-list {
+  display: grid;
+  gap: 8px;
+}
+
+.suggestion-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 253, 248, 0.72);
+  color: var(--ink);
+  text-align: left;
+}
+
+.suggestion-option strong,
+.suggestion-option span {
+  overflow-wrap: anywhere;
+}
+
+.suggestion-option span {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.suggestion-option em {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: center;
+  color: var(--moss);
+  font-family: Avenir, "Gill Sans", sans-serif;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.suggestion-option.is-active {
+  border-color: rgba(79, 111, 82, 0.55);
+  background: rgba(112, 140, 87, 0.13);
+}
+
 textarea {
   width: 100%;
   margin: 8px 0 14px;

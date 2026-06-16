@@ -13,6 +13,7 @@ const confidenceLabel = document.querySelector("#confidenceLabel");
 const flowerName = document.querySelector("#flowerName");
 const flowerLatin = document.querySelector("#flowerLatin");
 const flowerTraits = document.querySelector("#flowerTraits");
+const suggestionsList = document.createElement("div");
 const noteInput = document.querySelector("#noteInput");
 const mapCanvas = document.querySelector("#mapCanvas");
 const mapDetail = document.querySelector("#mapDetail");
@@ -22,28 +23,8 @@ const STORAGE_KEY = "flower-position-observations";
 const DELETED_STORAGE_KEY = "flower-position-deleted-observations";
 const API_URL = "/api/observations";
 
-const candidates = [
-  {
-    name: "月季",
-    latin: "Rosa chinensis",
-    traits: ["花瓣层叠，常见红、粉、白色", "枝条可能有刺", "适合城市绿化和庭院观察"],
-  },
-  {
-    name: "木槿",
-    latin: "Hibiscus syriacus",
-    traits: ["单花开放时间短", "花心颜色通常更深", "夏秋季常见"],
-  },
-  {
-    name: "紫薇",
-    latin: "Lagerstroemia indica",
-    traits: ["花瓣皱缩像绉纸", "成簇开放", "树皮较光滑"],
-  },
-  {
-    name: "鸢尾",
-    latin: "Iris tectorum",
-    traits: ["花被片外翻", "叶片剑形", "常见紫蓝色花"],
-  },
-];
+suggestionsList.className = "suggestions-list";
+resultCard.append(suggestionsList);
 
 let currentPhoto = "";
 let currentLocation = null;
@@ -410,13 +391,41 @@ async function refreshHistory() {
 }
 
 function setResult(result) {
-  currentResult = result;
+  currentResult = {
+    ...result,
+    suggestions: result.suggestions || [],
+  };
   resultEmpty.hidden = true;
   resultCard.hidden = false;
   confidenceLabel.textContent = `${Math.round(result.confidence * 100)}%`;
   flowerName.textContent = result.name;
   flowerLatin.textContent = result.latin;
   flowerTraits.innerHTML = result.traits.map((trait) => `<li>${trait}</li>`).join("");
+  renderSuggestions(currentResult);
+}
+
+function renderSuggestions(result) {
+  const suggestions = result.suggestions || [];
+  if (suggestions.length <= 1) {
+    suggestionsList.innerHTML = "";
+    return;
+  }
+
+  suggestionsList.innerHTML = `
+    <span class="history-meta">候选结果</span>
+    ${suggestions
+      .map((suggestion) => {
+        const isActive = suggestion.name === result.name && suggestion.latin === result.latin;
+        return `
+          <button class="suggestion-option${isActive ? " is-active" : ""}" type="button" data-name="${escapeHtml(suggestion.name)}" data-latin="${escapeHtml(suggestion.latin)}" data-confidence="${suggestion.confidence}">
+            <strong>${escapeHtml(suggestion.name)}</strong>
+            <span>${escapeHtml(suggestion.latin || "Unknown species")}</span>
+            <em>${Math.round((suggestion.confidence || 0) * 100)}%</em>
+          </button>
+        `;
+      })
+      .join("")}
+  `;
 }
 
 function resizeImage(file, maxSize = 1400, quality = 0.82) {
@@ -506,6 +515,18 @@ identifyButton.addEventListener("click", async () => {
   }
 });
 
+suggestionsList.addEventListener("click", (event) => {
+  const option = event.target.closest(".suggestion-option");
+  if (!option || !currentResult) return;
+
+  setResult({
+    ...currentResult,
+    name: option.dataset.name,
+    latin: option.dataset.latin,
+    confidence: Number(option.dataset.confidence || currentResult.confidence),
+  });
+});
+
 saveButton.addEventListener("click", async () => {
   const result = currentResult || {
     name: "待识别花卉",
@@ -521,6 +542,7 @@ saveButton.addEventListener("click", async () => {
     latin: result.latin,
     confidence: result.confidence,
     traits: result.traits,
+    suggestions: result.suggestions || [],
     photo: currentPhoto,
     location: currentLocation,
     note: noteInput.value.trim(),

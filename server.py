@@ -32,6 +32,7 @@ def init_db():
                 latin TEXT,
                 confidence REAL,
                 traits TEXT,
+                suggestions TEXT,
                 photo TEXT,
                 latitude REAL,
                 longitude REAL,
@@ -40,6 +41,11 @@ def init_db():
             )
             """
         )
+        existing_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(observations)").fetchall()
+        }
+        if "suggestions" not in existing_columns:
+            conn.execute("ALTER TABLE observations ADD COLUMN suggestions TEXT")
         conn.commit()
 
 
@@ -59,6 +65,7 @@ def row_to_observation(row):
         "latin": row["latin"] or "",
         "confidence": row["confidence"] or 0,
         "traits": json.loads(row["traits"] or "[]"),
+        "suggestions": json.loads(row["suggestions"] or "[]"),
         "photo": row["photo"] or "",
         "location": location,
         "note": row["note"] or "",
@@ -80,10 +87,10 @@ def save_observation(item):
         conn.execute(
             """
             INSERT OR REPLACE INTO observations (
-                id, created_at, name, latin, confidence, traits, photo,
+                id, created_at, name, latin, confidence, traits, suggestions, photo,
                 latitude, longitude, accuracy, note
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 item["id"],
@@ -92,6 +99,7 @@ def save_observation(item):
                 item.get("latin", ""),
                 item.get("confidence", 0),
                 json.dumps(item.get("traits", []), ensure_ascii=False),
+                json.dumps(item.get("suggestions", []), ensure_ascii=False),
                 item.get("photo", ""),
                 location.get("latitude"),
                 location.get("longitude"),
@@ -357,6 +365,9 @@ def normalize_observation(payload):
     traits = item.get("traits", [])
     if not isinstance(traits, list):
         traits = []
+    suggestions = item.get("suggestions", [])
+    if not isinstance(suggestions, list):
+        suggestions = []
 
     location = item.get("location")
     if not isinstance(location, dict):
@@ -369,10 +380,26 @@ def normalize_observation(payload):
         "latin": str(item.get("latin", ""))[:120],
         "confidence": float(item.get("confidence") or 0),
         "traits": [str(trait)[:160] for trait in traits[:8]],
+        "suggestions": normalize_suggestions(suggestions),
         "photo": str(item.get("photo", ""))[:MAX_BODY_BYTES],
         "location": location,
         "note": str(item.get("note", ""))[:1200],
     }
+
+
+def normalize_suggestions(suggestions):
+    normalized = []
+    for suggestion in suggestions[:5]:
+        if not isinstance(suggestion, dict):
+            continue
+        normalized.append(
+            {
+                "name": str(suggestion.get("name", ""))[:100],
+                "latin": str(suggestion.get("latin", ""))[:140],
+                "confidence": float(suggestion.get("confidence") or 0),
+            }
+        )
+    return normalized
 
 
 if __name__ == "__main__":
