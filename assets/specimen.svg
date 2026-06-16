@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1125" role="img" aria-label="花卉标本占位图">
+  <rect width="900" height="1125" fill="#fbfaf4"/>
+  <path d="M452 245c-30 123-28 349 9 560" fill="none" stroke="#4f6f52" stroke-width="18" stroke-linecap="round"/>
+  <path d="M444 508c-128-73-239-84-302-44 76 62 183 86 302 44z" fill="#708c57" opacity=".82"/>
+  <path d="M462 632c136-80 253-92 320-47-83 66-193 89-320 47z" fill="#4f6f52" opacity=".78"/>
+  <g transform="translate(450 282)">
+    <ellipse cx="0" cy="-88" rx="58" ry="113" fill="#c35d67"/>
+    <ellipse cx="0" cy="88" rx="58" ry="113" fill="#c35d67"/>
+    <ellipse cx="-88" cy="0" rx="113" ry="58" fill="#d9787d"/>
+    <ellipse cx="88" cy="0" rx="113" ry="58" fill="#d9787d"/>
+    <ellipse cx="-62" cy="-62" rx="91" ry="48" fill="#e69ba0" transform="rotate(45 -62 -62)"/>
+    <ellipse cx="62" cy="-62" rx="91" ry="48" fill="#e69ba0" transform="rotate(-45 62 -62)"/>
+    <ellipse cx="-62" cy="62" rx="91" ry="48" fill="#e69ba0" transform="rotate(-45 -62 62)"/>
+    <ellipse cx="62" cy="62" rx="91" ry="48" fill="#e69ba0" transform="rotate(45 62 62)"/>
+    <circle r="50" fill="#d5a03a"/>
+    <circle r="20" fill="#6b5731"/>
+  </g>
+  <path d="M158 904h584" stroke="#24251f" stroke-width="2" opacity=".12"/>
+  <text x="450" y="962" text-anchor="middle" fill="#73705f" font-family="Avenir, sans-serif" font-size="28">选择照片后开始识别</text>
+</svg>

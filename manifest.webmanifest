@@ -1,0 +1,19 @@
+{
+  "name": "识花定位",
+  "short_name": "识花",
+  "description": "拍照识别花卉，记录定位和自然观察笔记。",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#f4f0e6",
+  "theme_color": "#4f6f52",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
