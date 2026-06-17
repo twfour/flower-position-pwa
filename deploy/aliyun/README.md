@@ -128,4 +128,41 @@ ls -lh /var/backups/flower-position
 
 ## HTTPS
 
-公网 IP 可以先测试页面和 API，但浏览器定位、通知和 PWA 安装在正式使用时需要 HTTPS。建议后续绑定域名，再用 Certbot 或阿里云证书配置 Nginx HTTPS。
+公网 IP 可以先测试页面和 API，但浏览器定位、通知和 PWA 安装在正式使用时需要 HTTPS。
+
+当前域名：
+
+- `qinyibin.com`
+- `www.qinyibin.com`
+
+阿里云中国大陆 ECS 需要先完成 ICP 备案。备案未通过时，公网访问域名会被阿里云拦截，
+Let’s Encrypt 无法读取 `/.well-known/acme-challenge/`，证书签发会失败。
+
+备案通过后，先部署最新代码：
+
+```bash
+deploy/aliyun/deploy.sh
+```
+
+然后启用 HTTPS：
+
+```bash
+deploy/aliyun/enable_https.sh
+```
+
+脚本会依次完成：
+
+- 检查两个域名的 ACME HTTP 验证文件是否公网可访问
+- 使用服务器上的 `acme.sh` 为 `qinyibin.com` 和 `www.qinyibin.com` 签发证书
+- 安装证书到 `/etc/nginx/ssl/qinyibin.com`
+- 切换到 `deploy/aliyun/nginx-https.conf`
+- 重载 nginx
+- 验证两个 HTTPS 健康接口
+
+如果要回退到 HTTP 配置：
+
+```bash
+cp /opt/flower-position-pwa/deploy/aliyun/nginx.conf /etc/nginx/conf.d/flower-position.conf
+nginx -t
+systemctl reload nginx
+```
