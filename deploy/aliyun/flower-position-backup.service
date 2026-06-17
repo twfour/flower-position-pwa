@@ -1,0 +1,6 @@
+[Unit]
+Description=Back up Flower Position SQLite database
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/flower-position-pwa/deploy/aliyun/backup_sqlite.py
