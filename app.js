@@ -22,6 +22,14 @@ const nearbyList = document.querySelector("#nearbyList");
 const mapCanvas = document.querySelector("#mapCanvas");
 const mapDetail = document.querySelector("#mapDetail");
 const historyList = document.querySelector("#historyList");
+const historySearch = document.querySelector("#historySearch");
+const historyFrom = document.querySelector("#historyFrom");
+const historyTo = document.querySelector("#historyTo");
+const locatedOnly = document.querySelector("#locatedOnly");
+const resetFiltersButton = document.querySelector("#resetFiltersButton");
+const exportCsvButton = document.querySelector("#exportCsvButton");
+const exportJsonButton = document.querySelector("#exportJsonButton");
+const historySummary = document.querySelector("#historySummary");
 
 const STORAGE_KEY = "flower-position-observations";
 const DELETED_STORAGE_KEY = "flower-position-deleted-observations";
@@ -170,19 +178,69 @@ function mergeObservations(primary, fallback) {
     .slice(0, 100);
 }
 
+function historyFilters() {
+  return {
+    query: historySearch.value.trim().toLowerCase(),
+    from: historyFrom.value ? new Date(`${historyFrom.value}T00:00:00`) : null,
+    to: historyTo.value ? new Date(`${historyTo.value}T23:59:59.999`) : null,
+    locatedOnly: locatedOnly.checked,
+  };
+}
+
+function matchesHistoryFilters(item, filters = historyFilters()) {
+  const createdAt = new Date(item.createdAt);
+  if (filters.from && createdAt < filters.from) return false;
+  if (filters.to && createdAt > filters.to) return false;
+  if (filters.locatedOnly && !observationLocation(item)) return false;
+
+  if (!filters.query) return true;
+  const haystack = [
+    item.name,
+    item.latin,
+    item.note,
+    ...(item.traits || []),
+  ]
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(filters.query);
+}
+
+function filteredObservations(items = loadLocalObservations()) {
+  const filters = historyFilters();
+  return items.filter((item) => matchesHistoryFilters(item, filters));
+}
+
+function updateHistorySummary(allItems, visibleItems) {
+  const locatedCount = visibleItems.filter((item) => observationLocation(item)).length;
+  const plantCount = new Set(visibleItems.map((item) => item.name).filter(Boolean)).size;
+  historySummary.innerHTML = `
+    <span><strong>${visibleItems.length}</strong> 条记录</span>
+    <span><strong>${plantCount}</strong> 种名称</span>
+    <span><strong>${locatedCount}</strong> 个位置</span>
+    ${visibleItems.length !== allItems.length ? `<span>已从 ${allItems.length} 条中筛选</span>` : ""}
+  `;
+}
+
 function updateNetworkStatus() {
   networkStatus.textContent = navigator.onLine ? "在线" : "离线可记录";
 }
 
 function renderHistory(items = loadLocalObservations()) {
-  renderMap(items);
+  const visibleItems = filteredObservations(items);
+  updateHistorySummary(items, visibleItems);
+  renderMap(visibleItems);
 
   if (!items.length) {
     historyList.innerHTML = '<div class="empty-state">还没有保存记录。</div>';
     return;
   }
 
-  historyList.innerHTML = items
+  if (!visibleItems.length) {
+    historyList.innerHTML = '<div class="empty-state">没有匹配当前筛选的记录。</div>';
+    return;
+  }
+
+  historyList.innerHTML = visibleItems
     .map((item) => {
       const location = item.location
         ? `${item.location.latitude.toFixed(5)}, ${item.location.longitude.toFixed(5)}`
@@ -308,6 +366,56 @@ function renderMap(items = []) {
   });
 
   renderMapDetail(detailItem);
+}
+
+function csvValue(value) {
+  const text = String(value ?? "");
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function observationToCsvRow(item) {
+  const location = observationLocation(item);
+  return [
+    item.id,
+    item.createdAt,
+    item.name,
+    item.latin,
+    item.confidence,
+    item.note,
+    location?.latitude ?? "",
+    location?.longitude ?? "",
+    location?.accuracy ?? "",
+  ].map(csvValue).join(",");
+}
+
+function downloadText(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function exportCsv() {
+  const items = filteredObservations();
+  const header = ["id", "createdAt", "name", "latin", "confidence", "note", "latitude", "longitude", "accuracy"]
+    .map(csvValue)
+    .join(",");
+  const rows = items.map(observationToCsvRow);
+  downloadText(`flower-observations-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...rows].join("\n"), "text/csv;charset=utf-8");
+}
+
+function exportJson() {
+  const items = filteredObservations().map(cleanObservation);
+  downloadText(
+    `flower-observations-${new Date().toISOString().slice(0, 10)}.json`,
+    JSON.stringify({ exportedAt: new Date().toISOString(), observations: items }, null, 2),
+    "application/json;charset=utf-8",
+  );
 }
 
 function renderMapDetail(item) {
@@ -719,6 +827,22 @@ clearButton.addEventListener("click", async () => {
     networkStatus.textContent = "已清空本机";
   }
 });
+
+[historySearch, historyFrom, historyTo, locatedOnly].forEach((control) => {
+  control.addEventListener("input", () => renderHistory(loadLocalObservations()));
+  control.addEventListener("change", () => renderHistory(loadLocalObservations()));
+});
+
+resetFiltersButton.addEventListener("click", () => {
+  historySearch.value = "";
+  historyFrom.value = "";
+  historyTo.value = "";
+  locatedOnly.checked = false;
+  renderHistory(loadLocalObservations());
+});
+
+exportCsvButton.addEventListener("click", exportCsv);
+exportJsonButton.addEventListener("click", exportJson);
 
 proximityToggle.addEventListener("click", () => {
   const settings = loadProximitySettings();

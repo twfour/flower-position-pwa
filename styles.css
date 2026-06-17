@@ -567,6 +567,77 @@ textarea {
   gap: 8px;
 }
 
+.manage-bar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) repeat(2, minmax(130px, 0.7fr)) minmax(132px, auto) repeat(3, auto);
+  gap: 10px;
+  align-items: end;
+  margin-top: 18px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 253, 248, 0.52);
+}
+
+.search-field,
+.date-field {
+  display: grid;
+  gap: 6px;
+}
+
+.search-field input,
+.date-field input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 253, 248, 0.82);
+  color: var(--ink);
+}
+
+.toggle-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 253, 248, 0.82);
+  color: var(--ink);
+  font-family: Avenir, "Gill Sans", sans-serif;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.toggle-field input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--moss);
+}
+
+.history-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-family: Avenir, "Gill Sans", sans-serif;
+  font-size: 0.84rem;
+}
+
+.history-summary span {
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 253, 248, 0.62);
+}
+
+.history-summary strong {
+  color: var(--ink);
+}
+
 .history-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -615,7 +686,8 @@ textarea {
 
   main,
   .history-list,
-  .map-layout {
+  .map-layout,
+  .manage-bar {
     grid-template-columns: 1fr;
   }
 

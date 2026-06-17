@@ -117,6 +117,28 @@
             </div>
             <button id="clearButton" class="ghost-button" type="button">清空</button>
           </div>
+          <div class="manage-bar" aria-label="观察记录管理">
+            <label class="search-field" for="historySearch">
+              <span class="history-meta">搜索</span>
+              <input id="historySearch" type="search" placeholder="花名、拉丁名、笔记">
+            </label>
+            <label class="date-field" for="historyFrom">
+              <span class="history-meta">开始</span>
+              <input id="historyFrom" type="date">
+            </label>
+            <label class="date-field" for="historyTo">
+              <span class="history-meta">结束</span>
+              <input id="historyTo" type="date">
+            </label>
+            <label class="toggle-field">
+              <input id="locatedOnly" type="checkbox">
+              <span>只看有位置</span>
+            </label>
+            <button id="resetFiltersButton" class="ghost-button" type="button">重置</button>
+            <button id="exportCsvButton" class="ghost-button" type="button">CSV</button>
+            <button id="exportJsonButton" class="ghost-button" type="button">JSON</button>
+          </div>
+          <div class="history-summary" id="historySummary" aria-live="polite"></div>
           <div class="map-layout">
             <div class="map-canvas" id="mapCanvas" aria-label="花卉观察点位图"></div>
             <aside class="map-detail" id="mapDetail" aria-live="polite">
