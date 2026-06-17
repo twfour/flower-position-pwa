@@ -1,0 +1,91 @@
+name: Deploy Aliyun ECS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: aliyun-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      APP_DIR: /opt/flower-position-pwa
+      DATA_DIR: /var/lib/flower-position
+      BACKUP_DIR: /var/backups/flower-position
+      ENV_FILE: /etc/flower-position.env
+      ARCHIVE_REMOTE: /tmp/flower-position-pwa.tar.gz
+      ALIYUN_HOST: ${{ secrets.ALIYUN_HOST }}
+      ALIYUN_USER: ${{ secrets.ALIYUN_USER }}
+      ALIYUN_SSH_KEY: ${{ secrets.ALIYUN_SSH_KEY }}
+      HEALTH_URL: ${{ secrets.ALIYUN_HEALTH_URL }}
+
+    steps:
+      - name: Check required secrets
+        run: |
+          test -n "$ALIYUN_HOST"
+          test -n "$ALIYUN_USER"
+          test -n "$ALIYUN_SSH_KEY"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build archive
+        run: |
+          tar \
+            --exclude ".git" \
+            --exclude ".github" \
+            --exclude ".DS_Store" \
+            --exclude "aliyun.txt" \
+            --exclude "data" \
+            --exclude "__pycache__" \
+            --exclude "*.pyc" \
+            -czf /tmp/flower-position-pwa.tar.gz .
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ALIYUN_SSH_KEY" > ~/.ssh/aliyun_deploy_key
+          chmod 600 ~/.ssh/aliyun_deploy_key
+          ssh-keyscan -H "$ALIYUN_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload archive
+        run: |
+          scp -i ~/.ssh/aliyun_deploy_key "$ARCHIVE_REMOTE" "$ALIYUN_USER@$ALIYUN_HOST:$ARCHIVE_REMOTE"
+
+      - name: Install and restart
+        run: |
+          ssh -i ~/.ssh/aliyun_deploy_key "$ALIYUN_USER@$ALIYUN_HOST" "set -e
+          mkdir -p '$APP_DIR' '$DATA_DIR' '$BACKUP_DIR'
+          tar -xzf '$ARCHIVE_REMOTE' -C '$APP_DIR'
+          rm -f '$ARCHIVE_REMOTE'
+          if [ ! -f '$ENV_FILE' ]; then
+            printf '%s\n' \
+              'DATA_DIR=/var/lib/flower-position' \
+              'PORT=8000' \
+              'HOST=127.0.0.1' \
+              'PLANTNET_API_KEY=CHANGE_ME' \
+              'PLANTNET_PROJECT=all' > '$ENV_FILE'
+            chmod 600 '$ENV_FILE'
+          fi
+          cp '$APP_DIR/deploy/aliyun/flower-position.service' /etc/systemd/system/
+          cp '$APP_DIR/deploy/aliyun/flower-position-backup.service' /etc/systemd/system/
+          cp '$APP_DIR/deploy/aliyun/flower-position-backup.timer' /etc/systemd/system/
+          cp '$APP_DIR/deploy/aliyun/nginx.conf' /etc/nginx/conf.d/flower-position.conf
+          systemctl daemon-reload
+          systemctl enable --now flower-position.service
+          systemctl restart flower-position.service
+          systemctl enable --now flower-position-backup.timer
+          nginx -t
+          systemctl reload nginx
+          curl -fsS http://127.0.0.1:8000/api/health >/dev/null
+          systemctl --no-pager --lines=0 status flower-position.service >/dev/null"
+
+      - name: Public health check
+        run: |
+          curl -fsS "${HEALTH_URL:-http://$ALIYUN_HOST/api/health}"

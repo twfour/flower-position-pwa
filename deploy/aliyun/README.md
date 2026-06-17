@@ -64,6 +64,36 @@ SSH_KEY_FILE=~/.ssh/flower_position_aliyun_ed25519 deploy/aliyun/deploy.sh
 
 密钥登录验证成功后，可以在服务器上关闭 SSH 密码登录。
 
+## GitHub 自动部署
+
+项目包含 GitHub Actions workflow：`.github/workflows/deploy-aliyun.yml`。
+每次推送 `main` 分支后，GitHub 会打包代码并通过 SSH 上传到 ECS，随后重启服务并检查健康接口。
+
+这种方式不要求 ECS 能访问 GitHub，适合当前阿里云访问 GitHub 超时的情况。
+
+需要在 GitHub 仓库设置这些 Secrets：
+
+```bash
+ALIYUN_HOST=101.37.82.5
+ALIYUN_USER=root
+ALIYUN_SSH_KEY=部署用 SSH 私钥内容
+ALIYUN_HEALTH_URL=http://101.37.82.5/api/health
+```
+
+当前服务器已经允许本机维护密钥登录：
+
+```bash
+~/.ssh/flower_position_aliyun_ed25519
+```
+
+GitHub Actions 建议使用单独的部署密钥。当前已生成专用密钥：
+
+```bash
+~/.ssh/flower_position_github_actions_ed25519
+```
+
+它的公钥已追加到 ECS 的 `/root/.ssh/authorized_keys`，私钥已写入仓库 Secret `ALIYUN_SSH_KEY`。
+
 ## 服务器安全
 
 阿里云部署建议：
