@@ -1,0 +1,14 @@
+[Unit]
+Description=Flower Position PWA
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/flower-position-pwa
+EnvironmentFile=/etc/flower-position.env
+ExecStart=/usr/bin/python3 /opt/flower-position-pwa/server.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
