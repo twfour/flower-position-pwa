@@ -29,6 +29,32 @@ curl -s http://127.0.0.1:8000/api/health
 curl -s http://公网IP/api/health
 ```
 
+## 一键部署
+
+本地项目根目录执行：
+
+```bash
+deploy/aliyun/deploy.sh
+```
+
+脚本会打包当前项目，排除 `.git`、`aliyun.txt`、本地 `data` 等文件，
+上传到 `/opt/flower-position-pwa`，然后安装 systemd/nginx 配置、重启应用、
+启用备份定时器并检查健康接口。
+
+默认连接：
+
+```bash
+SSH_TARGET=root@101.37.82.5
+HEALTH_URL=http://101.37.82.5/api/health
+```
+
+如果项目根目录存在 `aliyun.txt` 且本机安装了 `expect`，脚本会自动用该文件里的
+SSH 密码登录；否则使用系统默认 SSH 登录方式。可以按需覆盖：
+
+```bash
+SSH_TARGET=root@你的服务器IP HEALTH_URL=http://你的服务器IP/api/health deploy/aliyun/deploy.sh
+```
+
 ## SQLite 自动备份
 
 项目包含一个不依赖第三方库的备份脚本：
