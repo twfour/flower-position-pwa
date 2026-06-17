@@ -6,6 +6,7 @@ After=network.target
 Type=simple
 WorkingDirectory=/opt/flower-position-pwa
 EnvironmentFile=/etc/flower-position.env
+Environment=HOST=127.0.0.1
 ExecStart=/usr/bin/python3 /opt/flower-position-pwa/server.py
 Restart=always
 RestartSec=5

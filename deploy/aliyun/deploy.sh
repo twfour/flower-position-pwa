@@ -6,6 +6,7 @@ DATA_DIR="${DATA_DIR:-/var/lib/flower-position}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/flower-position}"
 ENV_FILE="${ENV_FILE:-/etc/flower-position.env}"
 SSH_TARGET="${SSH_TARGET:-root@101.37.82.5}"
+SSH_KEY_FILE="${SSH_KEY_FILE:-$HOME/.ssh/flower_position_aliyun_ed25519}"
 PASSWORD_FILE="${PASSWORD_FILE:-aliyun.txt}"
 ARCHIVE_REMOTE="${ARCHIVE_REMOTE:-/tmp/flower-position-pwa.tar.gz}"
 HEALTH_URL="${HEALTH_URL:-http://101.37.82.5/api/health}"
@@ -22,9 +23,15 @@ has_password_auth() {
   [[ -f "$ROOT_DIR/$PASSWORD_FILE" ]] && command -v expect >/dev/null 2>&1
 }
 
+has_key_auth() {
+  [[ -f "$SSH_KEY_FILE" ]]
+}
+
 remote_exec() {
   local remote_cmd="$1"
-  if has_password_auth; then
+  if has_key_auth; then
+    ssh -i "$SSH_KEY_FILE" -o StrictHostKeyChecking=no "$SSH_TARGET" "$remote_cmd"
+  elif has_password_auth; then
     expect -f - "$SSH_TARGET" "$ROOT_DIR/$PASSWORD_FILE" "$remote_cmd" <<'EXPECT'
 set timeout 180
 set target [lindex $argv 0]
@@ -56,7 +63,9 @@ EXPECT
 copy_to_remote() {
   local local_path="$1"
   local remote_path="$2"
-  if has_password_auth; then
+  if has_key_auth; then
+    scp -i "$SSH_KEY_FILE" -o StrictHostKeyChecking=no "$local_path" "$SSH_TARGET:$remote_path"
+  elif has_password_auth; then
     expect -f - "$SSH_TARGET" "$ROOT_DIR/$PASSWORD_FILE" "$local_path" "$remote_path" <<'EXPECT'
 set timeout 180
 set target [lindex $argv 0]
@@ -111,6 +120,7 @@ if [ ! -f '$ENV_FILE' ]; then
   cat > '$ENV_FILE' <<'ENV'
 DATA_DIR=/var/lib/flower-position
 PORT=8000
+HOST=127.0.0.1
 PLANTNET_API_KEY=CHANGE_ME
 PLANTNET_PROJECT=all
 ENV

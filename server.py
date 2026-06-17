@@ -404,7 +404,8 @@ def normalize_suggestions(suggestions):
 
 if __name__ == "__main__":
     init_db()
+    host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8000"))
-    server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
-    print(f"Serving flower position PWA on http://0.0.0.0:{port}")
+    server = ThreadingHTTPServer((host, port), Handler)
+    print(f"Serving flower position PWA on http://{host}:{port}")
     server.serve_forever()
