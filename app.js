@@ -89,6 +89,13 @@ function saveProximitySettings(settings) {
   localStorage.setItem(PROXIMITY_STORAGE_KEY, JSON.stringify(settings));
 }
 
+function createObservationId() {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  return `observation-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 function cleanObservation(observation) {
   const { pendingSync, ...cleanedObservation } = observation;
   return cleanedObservation;
@@ -792,7 +799,7 @@ saveButton.addEventListener("click", async () => {
   };
 
   const observation = {
-    id: crypto.randomUUID(),
+    id: createObservationId(),
     createdAt: new Date().toISOString(),
     name: result.name,
     latin: result.latin,
