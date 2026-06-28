@@ -8,6 +8,7 @@ CERT_DIR="${CERT_DIR:-/etc/nginx/ssl/$DOMAIN}"
 NGINX_CONF="${NGINX_CONF:-/etc/nginx/conf.d/flower-position.conf}"
 SSH_TARGET="${SSH_TARGET:-root@101.37.82.5}"
 SSH_KEY_FILE="${SSH_KEY_FILE:-$HOME/.ssh/flower_position_aliyun_ed25519}"
+CURL_OPTS=(--noproxy '*')
 
 ssh_exec() {
   ssh -i "$SSH_KEY_FILE" -o StrictHostKeyChecking=no -o BatchMode=yes "$SSH_TARGET" "$1"
@@ -39,14 +40,14 @@ mkdir -p '$APP_DIR/.well-known/acme-challenge'
 printf '$TOKEN' > '$APP_DIR/.well-known/acme-challenge/$TOKEN'"
 
 echo "==> Checking ACME challenge over public HTTP"
-if [[ "$(curl -fsS "http://$DOMAIN/.well-known/acme-challenge/$TOKEN" 2>/dev/null || true)" != "$TOKEN" ]]; then
+if [[ "$(curl "${CURL_OPTS[@]}" -fsS "http://$DOMAIN/.well-known/acme-challenge/$TOKEN" 2>/dev/null || true)" != "$TOKEN" ]]; then
   echo "HTTP challenge is not reachable for $DOMAIN." >&2
   echo "If this is an Aliyun mainland ECS, wait until ICP filing is approved." >&2
   exit 1
 fi
 
 if [[ -n "$ALT_DOMAIN" ]]; then
-  if [[ "$(curl -fsS "http://$ALT_DOMAIN/.well-known/acme-challenge/$TOKEN" 2>/dev/null || true)" != "$TOKEN" ]]; then
+  if [[ "$(curl "${CURL_OPTS[@]}" -fsS "http://$ALT_DOMAIN/.well-known/acme-challenge/$TOKEN" 2>/dev/null || true)" != "$TOKEN" ]]; then
     echo "HTTP challenge is not reachable for $ALT_DOMAIN." >&2
     echo "Check DNS and ICP filing before issuing HTTPS certificates." >&2
     exit 1
@@ -80,10 +81,10 @@ nginx -t
 systemctl reload nginx"
 
 echo "==> Checking HTTPS"
-curl -fsS "https://$DOMAIN/api/health"
+curl "${CURL_OPTS[@]}" -fsS "https://$DOMAIN/api/health"
 echo
 if [[ -n "$ALT_DOMAIN" ]]; then
-  curl -fsS "https://$ALT_DOMAIN/api/health"
+  curl "${CURL_OPTS[@]}" -fsS "https://$ALT_DOMAIN/api/health"
   echo
 fi
 echo "HTTPS enabled."
