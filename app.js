@@ -34,6 +34,7 @@ const historySummary = document.querySelector("#historySummary");
 const STORAGE_KEY = "flower-position-observations";
 const DELETED_STORAGE_KEY = "flower-position-deleted-observations";
 const PROXIMITY_STORAGE_KEY = "flower-position-proximity-settings";
+const WRITE_TOKEN_STORAGE_KEY = "flower-position-write-token";
 const API_URL = "/api/observations";
 
 suggestionsList.className = "suggestions-list";
@@ -89,6 +90,31 @@ function saveProximitySettings(settings) {
   localStorage.setItem(PROXIMITY_STORAGE_KEY, JSON.stringify(settings));
 }
 
+function setupWriteTokenFromHash() {
+  const hash = new URLSearchParams(window.location.hash.slice(1));
+  const token = hash.get("setup");
+  if (!token) return;
+  localStorage.setItem(WRITE_TOKEN_STORAGE_KEY, token.trim());
+  window.history.replaceState(null, "", window.location.pathname + window.location.search);
+}
+
+function writeToken() {
+  return localStorage.getItem(WRITE_TOKEN_STORAGE_KEY) || "";
+}
+
+function canWriteCloud() {
+  return Boolean(writeToken());
+}
+
+function writeHeaders(extraHeaders = {}) {
+  const token = writeToken();
+  return token ? { ...extraHeaders, "X-Write-Token": token } : extraHeaders;
+}
+
+function writeAccessErrorMessage(error) {
+  return error.message === "write-forbidden" ? "此设备未授权保存" : "云端保存失败，本机已保留";
+}
+
 function createObservationId() {
   if (typeof globalThis.crypto?.randomUUID === "function") {
     return globalThis.crypto.randomUUID();
@@ -123,11 +149,14 @@ async function saveCloudObservation(observation) {
   const response = await fetch(API_URL, {
     method: "POST",
     headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
+      ...writeHeaders({
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      }),
     },
     body: JSON.stringify({ observation }),
   });
+  if (response.status === 403) throw new Error("write-forbidden");
   if (!response.ok) throw new Error("Failed to save observation");
   return response.json();
 }
@@ -152,11 +181,14 @@ async function updateCloudObservation(observation) {
   const response = await fetch(`${API_URL}/${encodeURIComponent(observation.id)}`, {
     method: "PUT",
     headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
+      ...writeHeaders({
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      }),
     },
     body: JSON.stringify({ observation }),
   });
+  if (response.status === 403) throw new Error("write-forbidden");
   if (!response.ok) throw new Error("Failed to update observation");
   return response.json();
 }
@@ -164,12 +196,15 @@ async function updateCloudObservation(observation) {
 async function deleteCloudObservation(observationId) {
   const response = await fetch(`${API_URL}/${encodeURIComponent(observationId)}`, {
     method: "DELETE",
+    headers: writeHeaders(),
   });
+  if (response.status === 403) throw new Error("write-forbidden");
   if (!response.ok) throw new Error("Failed to delete observation");
 }
 
 async function clearCloudObservations() {
-  const response = await fetch(API_URL, { method: "DELETE" });
+  const response = await fetch(API_URL, { method: "DELETE", headers: writeHeaders() });
+  if (response.status === 403) throw new Error("write-forbidden");
   if (!response.ok) throw new Error("Failed to clear observations");
 }
 
@@ -229,7 +264,11 @@ function updateHistorySummary(allItems, visibleItems) {
 }
 
 function updateNetworkStatus() {
-  networkStatus.textContent = navigator.onLine ? "在线" : "离线可记录";
+  if (!navigator.onLine) {
+    networkStatus.textContent = "离线可记录";
+    return;
+  }
+  networkStatus.textContent = canWriteCloud() ? "已授权设备" : "只读设备";
 }
 
 function renderHistory(items = loadLocalObservations()) {
@@ -598,28 +637,32 @@ async function refreshHistory() {
   const localItems = loadLocalObservations();
   const deletedIds = loadDeletedObservationIds();
   try {
-    for (const observationId of [...deletedIds]) {
-      try {
-        await deleteCloudObservation(observationId);
-        deletedIds.delete(observationId);
-      } catch {
-        break;
+    if (canWriteCloud()) {
+      for (const observationId of [...deletedIds]) {
+        try {
+          await deleteCloudObservation(observationId);
+          deletedIds.delete(observationId);
+        } catch {
+          break;
+        }
       }
+      saveDeletedObservationIds(deletedIds);
     }
-    saveDeletedObservationIds(deletedIds);
 
     const activeLocalItems = localItems.filter((item) => !deletedIds.has(item.id));
     const cloudItems = (await fetchCloudObservations()).filter((item) => !deletedIds.has(item.id));
     const pendingItems = activeLocalItems.filter((item) => item.pendingSync);
     const syncedPendingItems = [];
 
-    for (const item of pendingItems) {
-      try {
-        const syncedItem = cleanObservation(item);
-        await updateCloudObservation(syncedItem);
-        syncedPendingItems.push(syncedItem);
-      } catch {
-        break;
+    if (canWriteCloud()) {
+      for (const item of pendingItems) {
+        try {
+          const syncedItem = cleanObservation(item);
+          await updateCloudObservation(syncedItem);
+          syncedPendingItems.push(syncedItem);
+        } catch {
+          break;
+        }
       }
     }
 
@@ -629,13 +672,15 @@ async function refreshHistory() {
     const localOnlyItems = activeLocalItems.filter((item) => item.id && !cloudIds.has(item.id) && !item.pendingSync);
     const syncedItems = [];
 
-    for (const item of localOnlyItems) {
-      try {
-        const syncedItem = cleanObservation(item);
-        await saveCloudObservation(syncedItem);
-        syncedItems.push(syncedItem);
-      } catch {
-        break;
+    if (canWriteCloud()) {
+      for (const item of localOnlyItems) {
+        try {
+          const syncedItem = cleanObservation(item);
+          await saveCloudObservation(syncedItem);
+          syncedItems.push(syncedItem);
+        } catch {
+          break;
+        }
       }
     }
 
@@ -645,8 +690,12 @@ async function refreshHistory() {
     );
     saveLocalObservations(mergedItems);
     renderHistory(mergedItems);
-    networkStatus.textContent =
-      localOnlyItems.length === syncedItems.length && !unresolvedPendingItems.length ? "云端已同步" : "本机记录已保留";
+    if (!canWriteCloud()) {
+      networkStatus.textContent = "只读设备";
+    } else {
+      networkStatus.textContent =
+        localOnlyItems.length === syncedItems.length && !unresolvedPendingItems.length ? "云端已同步" : "本机记录已保留";
+    }
   } catch {
     renderHistory(localItems);
     networkStatus.textContent = navigator.onLine ? "云端连接失败" : "离线可记录";
@@ -816,22 +865,31 @@ saveButton.addEventListener("click", async () => {
   noteInput.value = "";
   renderHistory(items);
 
+  if (!canWriteCloud()) {
+    networkStatus.textContent = "此设备未授权保存，本机已保留";
+    return;
+  }
+
   try {
     await saveCloudObservation(observation);
     networkStatus.textContent = "云端已保存";
     await refreshHistory();
-  } catch {
-    networkStatus.textContent = "云端保存失败，本机已保留";
+  } catch (error) {
+    networkStatus.textContent = writeAccessErrorMessage(error);
   }
 });
 
 clearButton.addEventListener("click", async () => {
   saveLocalObservations([]);
   renderHistory();
+  if (!canWriteCloud()) {
+    networkStatus.textContent = "此设备未授权清空云端";
+    return;
+  }
   try {
     await clearCloudObservations();
-  } catch {
-    networkStatus.textContent = "已清空本机";
+  } catch (error) {
+    networkStatus.textContent = error.message === "write-forbidden" ? "此设备未授权清空云端" : "已清空本机";
   }
 });
 
@@ -907,12 +965,17 @@ mapDetail.addEventListener("submit", async (event) => {
   };
 
   updateLocalObservation(updatedObservation);
+  if (!canWriteCloud()) {
+    networkStatus.textContent = "此设备未授权同步修改";
+    return;
+  }
+
   try {
     await updateCloudObservation(cleanObservation(updatedObservation));
     updateLocalObservation(cleanObservation(updatedObservation));
     networkStatus.textContent = "修改已同步";
-  } catch {
-    networkStatus.textContent = "修改已本机保存";
+  } catch (error) {
+    networkStatus.textContent = error.message === "write-forbidden" ? "此设备未授权同步修改" : "修改已本机保存";
   }
 });
 
@@ -925,13 +988,18 @@ mapDetail.addEventListener("click", async (event) => {
   deletedIds.add(observationId);
   saveDeletedObservationIds(deletedIds);
   removeLocalObservation(observationId);
+  if (!canWriteCloud()) {
+    networkStatus.textContent = "此设备未授权删除云端记录";
+    return;
+  }
+
   try {
     await deleteCloudObservation(observationId);
     deletedIds.delete(observationId);
     saveDeletedObservationIds(deletedIds);
     networkStatus.textContent = "记录已删除";
-  } catch {
-    networkStatus.textContent = "已删除本机记录";
+  } catch (error) {
+    networkStatus.textContent = error.message === "write-forbidden" ? "此设备未授权删除云端记录" : "已删除本机记录";
   }
 });
 
@@ -958,6 +1026,7 @@ if ("serviceWorker" in navigator) {
   });
 }
 
+setupWriteTokenFromHash();
 updateNetworkStatus();
 refreshHistory();
 updateProximityUi();

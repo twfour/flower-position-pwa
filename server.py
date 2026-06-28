@@ -2,6 +2,7 @@ import json
 import os
 import sqlite3
 import base64
+import hmac
 import mimetypes
 import shutil
 import uuid
@@ -20,6 +21,7 @@ PHOTO_DIR = DATA_DIR / "photos"
 MAX_BODY_BYTES = 12 * 1024 * 1024
 PLANTNET_API_KEY = os.environ.get("PLANTNET_API_KEY", "")
 PLANTNET_PROJECT = os.environ.get("PLANTNET_PROJECT", "all")
+WRITE_TOKEN = os.environ.get("WRITE_TOKEN", "")
 
 
 def init_db():
@@ -344,6 +346,8 @@ class Handler(SimpleHTTPRequestHandler):
         if path != "/api/observations":
             self.send_error(404)
             return
+        if not self.require_write_access():
+            return
 
         try:
             payload = self.read_json_body()
@@ -361,6 +365,8 @@ class Handler(SimpleHTTPRequestHandler):
         if not observation_id:
             self.send_error(404)
             return
+        if not self.require_write_access():
+            return
 
         try:
             payload = self.read_json_body()
@@ -376,6 +382,8 @@ class Handler(SimpleHTTPRequestHandler):
     def do_DELETE(self):
         path = urlparse(self.path).path
         if path == "/api/observations":
+            if not self.require_write_access():
+                return
             clear_observations()
             self.send_json({"ok": True})
             return
@@ -384,9 +392,20 @@ class Handler(SimpleHTTPRequestHandler):
         if not observation_id:
             self.send_error(404)
             return
+        if not self.require_write_access():
+            return
 
         delete_observation(observation_id)
         self.send_json({"ok": True})
+
+    def require_write_access(self):
+        if not WRITE_TOKEN:
+            return True
+        token = self.headers.get("X-Write-Token", "")
+        if hmac.compare_digest(token, WRITE_TOKEN):
+            return True
+        self.send_json({"error": "This device is not authorized to save observations"}, status=403)
+        return False
 
     def read_json_body(self):
         size = int(self.headers.get("Content-Length", "0"))
