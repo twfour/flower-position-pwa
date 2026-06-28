@@ -129,7 +129,13 @@ fi
 cp '$APP_DIR/deploy/aliyun/flower-position.service' /etc/systemd/system/
 cp '$APP_DIR/deploy/aliyun/flower-position-backup.service' /etc/systemd/system/
 cp '$APP_DIR/deploy/aliyun/flower-position-backup.timer' /etc/systemd/system/
-cp '$APP_DIR/deploy/aliyun/nginx.conf' /etc/nginx/conf.d/flower-position.conf
+if [ ! -f /etc/nginx/conf.d/flower-position.conf ]; then
+  cp '$APP_DIR/deploy/aliyun/nginx.conf' /etc/nginx/conf.d/flower-position.conf
+elif grep -q 'ssl_certificate' /etc/nginx/conf.d/flower-position.conf; then
+  echo 'Keeping existing HTTPS nginx config'
+else
+  cp '$APP_DIR/deploy/aliyun/nginx.conf' /etc/nginx/conf.d/flower-position.conf
+fi
 systemctl daemon-reload
 systemctl enable --now flower-position.service
 systemctl restart flower-position.service

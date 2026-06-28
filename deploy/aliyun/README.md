@@ -160,10 +160,15 @@ ls -lh /var/backups/flower-position
 
 公网 IP 可以先测试页面和 API，但浏览器定位、通知和 PWA 安装在正式使用时需要 HTTPS。
 
-当前域名：
+当前项目域名：
 
-- `qinyibin.com`
-- `www.qinyibin.com`
+- `flower.qinyibin.com`
+
+先在阿里云 DNS 中添加解析：
+
+| 主机记录 | 记录类型 | 记录值 |
+| --- | --- | --- |
+| `flower` | `A` | `101.37.82.5` |
 
 阿里云中国大陆 ECS 需要先完成 ICP 备案。备案未通过时，公网访问域名会被阿里云拦截，
 Let’s Encrypt 无法读取 `/.well-known/acme-challenge/`，证书签发会失败。
@@ -182,12 +187,12 @@ deploy/aliyun/enable_https.sh
 
 脚本会依次完成：
 
-- 检查两个域名的 ACME HTTP 验证文件是否公网可访问
-- 使用服务器上的 `acme.sh` 为 `qinyibin.com` 和 `www.qinyibin.com` 签发证书
-- 安装证书到 `/etc/nginx/ssl/qinyibin.com`
+- 检查 `flower.qinyibin.com` 的 ACME HTTP 验证文件是否公网可访问
+- 使用服务器上的 `acme.sh` 为 `flower.qinyibin.com` 签发证书
+- 安装证书到 `/etc/nginx/ssl/flower.qinyibin.com`
 - 切换到 `deploy/aliyun/nginx-https.conf`
 - 重载 nginx
-- 验证两个 HTTPS 健康接口
+- 验证 HTTPS 健康接口
 
 如果要回退到 HTTP 配置：
 

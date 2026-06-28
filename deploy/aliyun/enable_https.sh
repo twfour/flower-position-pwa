@@ -2,8 +2,8 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/flower-position-pwa}"
-DOMAIN="${DOMAIN:-qinyibin.com}"
-ALT_DOMAIN="${ALT_DOMAIN:-www.qinyibin.com}"
+DOMAIN="${DOMAIN:-flower.qinyibin.com}"
+ALT_DOMAIN="${ALT_DOMAIN:-}"
 CERT_DIR="${CERT_DIR:-/etc/nginx/ssl/$DOMAIN}"
 NGINX_CONF="${NGINX_CONF:-/etc/nginx/conf.d/flower-position.conf}"
 SSH_TARGET="${SSH_TARGET:-root@101.37.82.5}"
@@ -45,10 +45,12 @@ if [[ "$(curl -fsS "http://$DOMAIN/.well-known/acme-challenge/$TOKEN" 2>/dev/nul
   exit 1
 fi
 
-if [[ "$(curl -fsS "http://$ALT_DOMAIN/.well-known/acme-challenge/$TOKEN" 2>/dev/null || true)" != "$TOKEN" ]]; then
-  echo "HTTP challenge is not reachable for $ALT_DOMAIN." >&2
-  echo "Check DNS and ICP filing before issuing HTTPS certificates." >&2
-  exit 1
+if [[ -n "$ALT_DOMAIN" ]]; then
+  if [[ "$(curl -fsS "http://$ALT_DOMAIN/.well-known/acme-challenge/$TOKEN" 2>/dev/null || true)" != "$TOKEN" ]]; then
+    echo "HTTP challenge is not reachable for $ALT_DOMAIN." >&2
+    echo "Check DNS and ICP filing before issuing HTTPS certificates." >&2
+    exit 1
+  fi
 fi
 
 echo "==> Issuing certificate with acme.sh"
@@ -57,7 +59,11 @@ if [ ! -x /root/.acme.sh/acme.sh ]; then
   echo 'acme.sh is not installed at /root/.acme.sh/acme.sh' >&2
   exit 1
 fi
-/root/.acme.sh/acme.sh --issue -d '$DOMAIN' -d '$ALT_DOMAIN' -w '$APP_DIR' --keylength ec-256"
+if [ -n '$ALT_DOMAIN' ]; then
+  /root/.acme.sh/acme.sh --issue -d '$DOMAIN' -d '$ALT_DOMAIN' -w '$APP_DIR' --keylength ec-256
+else
+  /root/.acme.sh/acme.sh --issue -d '$DOMAIN' -w '$APP_DIR' --keylength ec-256
+fi"
 
 echo "==> Installing certificate"
 ssh_exec "set -e
@@ -76,6 +82,8 @@ systemctl reload nginx"
 echo "==> Checking HTTPS"
 curl -fsS "https://$DOMAIN/api/health"
 echo
-curl -fsS "https://$ALT_DOMAIN/api/health"
-echo
+if [[ -n "$ALT_DOMAIN" ]]; then
+  curl -fsS "https://$ALT_DOMAIN/api/health"
+  echo
+fi
 echo "HTTPS enabled."
