@@ -3,6 +3,7 @@ import os
 import sqlite3
 import base64
 import mimetypes
+import shutil
 import uuid
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -15,6 +16,7 @@ from urllib.request import urlopen
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("DATA_DIR", ROOT / "data"))
 DB_PATH = DATA_DIR / "observations.sqlite3"
+PHOTO_DIR = DATA_DIR / "photos"
 MAX_BODY_BYTES = 12 * 1024 * 1024
 PLANTNET_API_KEY = os.environ.get("PLANTNET_API_KEY", "")
 PLANTNET_PROJECT = os.environ.get("PLANTNET_PROJECT", "all")
@@ -22,6 +24,7 @@ PLANTNET_PROJECT = os.environ.get("PLANTNET_PROJECT", "all")
 
 def init_db():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    PHOTO_DIR.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             """
@@ -83,6 +86,8 @@ def list_observations():
 
 def save_observation(item):
     location = item.get("location") or {}
+    item = dict(item)
+    item["photo"] = persist_observation_photo(item["id"], item.get("photo", ""))
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             """
@@ -108,12 +113,14 @@ def save_observation(item):
             ),
         )
         conn.commit()
+    return item
 
 
 def delete_observation(observation_id):
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.execute("DELETE FROM observations WHERE id = ?", (observation_id,))
         conn.commit()
+    delete_observation_photos(observation_id)
     return cursor.rowcount > 0
 
 
@@ -121,6 +128,9 @@ def clear_observations():
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("DELETE FROM observations")
         conn.commit()
+    if PHOTO_DIR.exists():
+        shutil.rmtree(PHOTO_DIR)
+    PHOTO_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def identify_plant(photo_data_url):
@@ -171,6 +181,43 @@ def decode_data_url(data_url):
     if not image_bytes:
         raise ValueError("Empty image")
     return image_bytes, mime_type
+
+
+def persist_observation_photo(observation_id, photo):
+    if not isinstance(photo, str) or not photo:
+        return ""
+    if photo.startswith("/photos/") or photo.startswith("assets/"):
+        return photo[:MAX_BODY_BYTES]
+    if not photo.startswith("data:image/"):
+        return ""
+
+    image_bytes, mime_type = decode_data_url(photo)
+    extension = mimetypes.guess_extension(mime_type) or ".jpg"
+    if extension == ".jpe":
+        extension = ".jpg"
+    safe_id = "".join(
+        char if char.isalnum() or char in {"-", "_"} else "-"
+        for char in observation_id[:80]
+    ).strip("-") or uuid.uuid4().hex
+    filename = f"{safe_id}{extension}"
+
+    PHOTO_DIR.mkdir(parents=True, exist_ok=True)
+    delete_observation_photos(observation_id)
+    photo_path = PHOTO_DIR / filename
+    photo_path.write_bytes(image_bytes)
+    return f"/photos/{filename}"
+
+
+def delete_observation_photos(observation_id):
+    safe_prefix = "".join(
+        char if char.isalnum() or char in {"-", "_"} else "-"
+        for char in observation_id[:80]
+    ).strip("-")
+    if not safe_prefix or not PHOTO_DIR.exists():
+        return
+    for path in PHOTO_DIR.glob(f"{safe_prefix}.*"):
+        if path.is_file():
+            path.unlink()
 
 
 def encode_multipart(fields, files):
@@ -266,7 +313,17 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/observations":
             self.send_json({"observations": list_observations()})
             return
+        if path.startswith("/photos/"):
+            self.serve_photo(path)
+            return
         super().do_GET()
+
+    def do_HEAD(self):
+        path = urlparse(self.path).path
+        if path.startswith("/photos/"):
+            self.serve_photo(path, include_body=False)
+            return
+        super().do_HEAD()
 
     def do_POST(self):
         path = urlparse(self.path).path
@@ -291,7 +348,7 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             payload = self.read_json_body()
             item = normalize_observation(payload)
-            save_observation(item)
+            item = save_observation(item)
         except ValueError as exc:
             self.send_json({"error": str(exc)}, status=400)
             return
@@ -309,7 +366,7 @@ class Handler(SimpleHTTPRequestHandler):
             payload = self.read_json_body()
             item = normalize_observation(payload)
             item["id"] = observation_id[:80]
-            save_observation(item)
+            item = save_observation(item)
         except ValueError as exc:
             self.send_json({"error": str(exc)}, status=400)
             return
@@ -350,6 +407,27 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def serve_photo(self, path, include_body=True):
+        filename = Path(path).name
+        if not filename or filename != path.removeprefix("/photos/"):
+            self.send_error(404)
+            return
+
+        photo_path = PHOTO_DIR / filename
+        if not photo_path.is_file():
+            self.send_error(404)
+            return
+
+        content_type = mimetypes.guess_type(photo_path.name)[0] or "application/octet-stream"
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(photo_path.stat().st_size))
+        self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        self.end_headers()
+        if include_body:
+            with photo_path.open("rb") as photo_file:
+                shutil.copyfileobj(photo_file, self.wfile)
 
 
 def normalize_observation(payload):

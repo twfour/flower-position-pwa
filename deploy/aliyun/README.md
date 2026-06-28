@@ -127,17 +127,17 @@ sshd -T | grep -E '^(permitrootlogin|passwordauthentication|pubkeyauthentication
 - `pubkeyauthentication yes`
 - `permitrootlogin without-password`
 
-## SQLite 自动备份
+## 数据和照片自动备份
 
-项目包含一个不依赖第三方库的备份脚本：
+项目包含一个不依赖第三方库的备份脚本，会同时备份 SQLite 数据库和观察照片：
 
 ```bash
 python3 /opt/flower-position-pwa/deploy/aliyun/backup_sqlite.py
 ```
 
 默认会把 `/var/lib/flower-position/observations.sqlite3` 备份到
-`/var/backups/flower-position`，文件名类似
-`observations-20260617-032000.sqlite3.gz`，并保留最近 14 份。
+`/var/backups/flower-position`，并把 `/var/lib/flower-position/photos` 一起打包。
+文件名类似 `flower-position-20260628-032000.tar.gz`，并保留最近 14 份。
 
 启用每天自动备份：
 
