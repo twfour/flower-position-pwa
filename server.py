@@ -23,7 +23,12 @@ MAX_BODY_BYTES = 12 * 1024 * 1024
 PLANTNET_API_KEY = os.environ.get("PLANTNET_API_KEY", "")
 PLANTNET_PROJECT = os.environ.get("PLANTNET_PROJECT", "all")
 WRITE_TOKEN = os.environ.get("WRITE_TOKEN", "")
+AMAP_WEB_KEY = os.environ.get("AMAP_WEB_KEY", "")
 GEOCODER_ENABLED = os.environ.get("GEOCODER_ENABLED", "").lower() in {"1", "true", "yes"}
+AMAP_REVERSE_URL = os.environ.get(
+    "AMAP_REVERSE_URL",
+    "https://restapi.amap.com/v3/geocode/regeo",
+)
 NOMINATIM_REVERSE_URL = os.environ.get(
     "NOMINATIM_REVERSE_URL",
     "https://nominatim.openstreetmap.org/reverse",
@@ -312,6 +317,57 @@ def normalize_identification(payload):
 def reverse_geocode(latitude, longitude):
     if not GEOCODER_ENABLED:
         raise RuntimeError("Address lookup is not configured")
+    if AMAP_WEB_KEY:
+        return reverse_geocode_amap(latitude, longitude)
+    return reverse_geocode_nominatim(latitude, longitude)
+
+
+def reverse_geocode_amap(latitude, longitude):
+    query = urlencode(
+        {
+            "key": AMAP_WEB_KEY,
+            "location": f"{longitude:.7f},{latitude:.7f}",
+            "extensions": "base",
+            "radius": "1000",
+            "output": "json",
+        }
+    )
+    request = Request(
+        f"{AMAP_REVERSE_URL}?{query}",
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "flower-position-pwa/1.0",
+        },
+    )
+    with urlopen(request, timeout=8) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if str(payload.get("status")) != "1":
+        raise RuntimeError(payload.get("info") or "Amap address lookup failed")
+    regeocode = payload.get("regeocode") or {}
+    return compact_amap_address(regeocode)
+
+
+def compact_amap_address(regeocode):
+    address = regeocode.get("addressComponent") or {}
+    street = address.get("streetNumber") or {}
+    township = address.get("township")
+    neighborhood = address.get("neighborhood") or {}
+    building = address.get("building") or {}
+    parts = [
+        address.get("province"),
+        address.get("city") if isinstance(address.get("city"), str) else "",
+        address.get("district"),
+        township if isinstance(township, str) else "",
+        neighborhood.get("name") if isinstance(neighborhood, dict) else "",
+        street.get("street") if isinstance(street, dict) else "",
+        street.get("number") if isinstance(street, dict) else "",
+        building.get("name") if isinstance(building, dict) else "",
+    ]
+    compact = " · ".join(str(part) for part in parts if part)
+    return compact or str(regeocode.get("formatted_address", ""))[:240]
+
+
+def reverse_geocode_nominatim(latitude, longitude):
     query = urlencode(
         {
             "format": "jsonv2",
