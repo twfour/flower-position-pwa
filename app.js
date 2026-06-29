@@ -36,6 +36,11 @@ const DELETED_STORAGE_KEY = "flower-position-deleted-observations";
 const PROXIMITY_STORAGE_KEY = "flower-position-proximity-settings";
 const WRITE_TOKEN_STORAGE_KEY = "flower-position-write-token";
 const API_URL = "/api/observations";
+const CANONICAL_HOST = "flower.qinyibin.com";
+
+if (["qinyibin.com", "www.qinyibin.com"].includes(window.location.hostname)) {
+  window.location.replace(`https://${CANONICAL_HOST}${window.location.pathname}${window.location.search}${window.location.hash}`);
+}
 
 suggestionsList.className = "suggestions-list";
 resultCard.append(suggestionsList);

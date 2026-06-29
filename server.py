@@ -22,6 +22,11 @@ MAX_BODY_BYTES = 12 * 1024 * 1024
 PLANTNET_API_KEY = os.environ.get("PLANTNET_API_KEY", "")
 PLANTNET_PROJECT = os.environ.get("PLANTNET_PROJECT", "all")
 WRITE_TOKEN = os.environ.get("WRITE_TOKEN", "")
+ALLOWED_ORIGINS = {
+    "https://flower.qinyibin.com",
+    "https://qinyibin.com",
+    "https://www.qinyibin.com",
+}
 
 
 def init_db():
@@ -299,7 +304,22 @@ class Handler(SimpleHTTPRequestHandler):
 
     def end_headers(self):
         self.send_header("X-Content-Type-Options", "nosniff")
+        origin = self.headers.get("Origin", "")
+        if origin in ALLOWED_ORIGINS:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Write-Token")
         super().end_headers()
+
+    def do_OPTIONS(self):
+        path = urlparse(self.path).path
+        if path.startswith("/api/"):
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        self.send_error(404)
 
     def do_GET(self):
         path = urlparse(self.path).path
