@@ -23,6 +23,7 @@ MAX_BODY_BYTES = 12 * 1024 * 1024
 PLANTNET_API_KEY = os.environ.get("PLANTNET_API_KEY", "")
 PLANTNET_PROJECT = os.environ.get("PLANTNET_PROJECT", "all")
 WRITE_TOKEN = os.environ.get("WRITE_TOKEN", "")
+GEOCODER_ENABLED = os.environ.get("GEOCODER_ENABLED", "").lower() in {"1", "true", "yes"}
 NOMINATIM_REVERSE_URL = os.environ.get(
     "NOMINATIM_REVERSE_URL",
     "https://nominatim.openstreetmap.org/reverse",
@@ -309,6 +310,8 @@ def normalize_identification(payload):
 
 
 def reverse_geocode(latitude, longitude):
+    if not GEOCODER_ENABLED:
+        raise RuntimeError("Address lookup is not configured")
     query = urlencode(
         {
             "format": "jsonv2",
@@ -492,6 +495,9 @@ class Handler(SimpleHTTPRequestHandler):
             return
         try:
             address = reverse_geocode(latitude, longitude)
+        except RuntimeError as exc:
+            self.send_json({"error": str(exc)}, status=503)
+            return
         except Exception:
             self.send_json({"error": "Address lookup failed"}, status=502)
             return
