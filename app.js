@@ -54,6 +54,7 @@ let proximityWatchId = null;
 let lastProximityPosition = null;
 let lastNearbyIds = new Set();
 let lastNotificationTimes = new Map();
+let isSavingObservation = false;
 
 function loadLocalObservations() {
   try {
@@ -629,6 +630,16 @@ function updateLocalObservation(updatedObservation) {
   renderHistory(items);
 }
 
+function replaceLocalObservation(observation) {
+  const items = loadLocalObservations();
+  const nextItems = items.map((item) => (item.id === observation.id ? observation : item));
+  if (!items.some((item) => item.id === observation.id)) {
+    nextItems.unshift(observation);
+  }
+  saveLocalObservations(nextItems.slice(0, 60));
+  renderHistory(nextItems);
+}
+
 function removeLocalObservation(observationId) {
   const items = loadLocalObservations().filter((item) => item.id !== observationId);
   if (selectedMapObservationId === observationId) {
@@ -663,8 +674,8 @@ async function refreshHistory() {
       for (const item of pendingItems) {
         try {
           const syncedItem = cleanObservation(item);
-          await updateCloudObservation(syncedItem);
-          syncedPendingItems.push(syncedItem);
+          const response = await updateCloudObservation(syncedItem);
+          syncedPendingItems.push(response.observation || syncedItem);
         } catch {
           break;
         }
@@ -681,8 +692,8 @@ async function refreshHistory() {
       for (const item of localOnlyItems) {
         try {
           const syncedItem = cleanObservation(item);
-          await saveCloudObservation(syncedItem);
-          syncedItems.push(syncedItem);
+          const response = await saveCloudObservation(syncedItem);
+          syncedItems.push(response.observation || syncedItem);
         } catch {
           break;
         }
@@ -845,6 +856,12 @@ suggestionsList.addEventListener("click", (event) => {
 });
 
 saveButton.addEventListener("click", async () => {
+  if (isSavingObservation) return;
+  isSavingObservation = true;
+  saveButton.disabled = true;
+  const originalSaveLabel = saveButton.textContent;
+  saveButton.textContent = "保存中";
+
   const result = currentResult || {
     name: "待识别花卉",
     latin: "Pending identification",
@@ -872,15 +889,23 @@ saveButton.addEventListener("click", async () => {
 
   if (!canWriteCloud()) {
     networkStatus.textContent = "此设备未授权保存，本机已保留";
+    isSavingObservation = false;
+    saveButton.disabled = false;
+    saveButton.textContent = originalSaveLabel;
     return;
   }
 
   try {
-    await saveCloudObservation(observation);
+    const response = await saveCloudObservation(observation);
+    replaceLocalObservation(response.observation || observation);
     networkStatus.textContent = "云端已保存";
     await refreshHistory();
   } catch (error) {
     networkStatus.textContent = writeAccessErrorMessage(error);
+  } finally {
+    isSavingObservation = false;
+    saveButton.disabled = false;
+    saveButton.textContent = originalSaveLabel;
   }
 });
 
