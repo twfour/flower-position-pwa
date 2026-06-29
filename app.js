@@ -121,6 +121,31 @@ function writeAccessErrorMessage(error) {
   return error.message === "write-forbidden" ? "此设备未授权保存" : "云端保存失败，本机已保留";
 }
 
+function coordinateText(location) {
+  return `${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`;
+}
+
+function locationLabel(location) {
+  if (!location) return "未记录位置";
+  return location.address || coordinateText(location);
+}
+
+async function fetchAddressForLocation(location) {
+  const query = new URLSearchParams({
+    lat: String(location.latitude),
+    lon: String(location.longitude),
+  });
+  const response = await fetch(`/api/reverse-geocode?${query}`, {
+    headers: {
+      Accept: "application/json",
+      ...writeHeaders(),
+    },
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "地址解析失败");
+  return data.address || "";
+}
+
 function createObservationId() {
   if (typeof globalThis.crypto?.randomUUID === "function") {
     return globalThis.crypto.randomUUID();
@@ -294,9 +319,7 @@ function renderHistory(items = loadLocalObservations()) {
 
   historyList.innerHTML = visibleItems
     .map((item) => {
-      const location = item.location
-        ? `${item.location.latitude.toFixed(5)}, ${item.location.longitude.toFixed(5)}`
-        : "未记录位置";
+      const location = item.location ? locationLabel(item.location) : "未记录位置";
       const activeClass = item.id === selectedMapObservationId ? " is-active" : "";
       return `
         <article class="history-item${activeClass}" data-observation-id="${escapeHtml(item.id)}">
@@ -326,6 +349,7 @@ function observationLocation(item) {
     latitude: Number(location.latitude),
     longitude: Number(location.longitude),
     accuracy: Number(location.accuracy || 0),
+    address: String(location.address || ""),
   };
 }
 
@@ -437,6 +461,7 @@ function observationToCsvRow(item) {
     location?.latitude ?? "",
     location?.longitude ?? "",
     location?.accuracy ?? "",
+    location?.address ?? "",
   ].map(csvValue).join(",");
 }
 
@@ -454,7 +479,7 @@ function downloadText(filename, content, type) {
 
 function exportCsv() {
   const items = filteredObservations();
-  const header = ["id", "createdAt", "name", "latin", "confidence", "note", "latitude", "longitude", "accuracy"]
+  const header = ["id", "createdAt", "name", "latin", "confidence", "note", "latitude", "longitude", "accuracy", "address"]
     .map(csvValue)
     .join(",");
   const rows = items.map(observationToCsvRow);
@@ -475,7 +500,8 @@ function renderMapDetail(item) {
   const accuracyText = location?.accuracy ? `精度约 ${Math.round(location.accuracy)} 米` : "未记录精度";
   const locationMarkup = location
     ? `
-      <p>${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}</p>
+      <p>${escapeHtml(locationLabel(location))}</p>
+      <p>${coordinateText(location)}</p>
       <p>${accuracyText}</p>
     `
     : "<p>未记录位置</p>";
@@ -801,13 +827,21 @@ locateButton.addEventListener("click", () => {
 
   locationStatus.textContent = "定位中...";
   navigator.geolocation.getCurrentPosition(
-    (position) => {
+    async (position) => {
       currentLocation = {
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
         accuracy: position.coords.accuracy,
+        address: "",
       };
-      locationStatus.textContent = `${currentLocation.latitude.toFixed(5)}, ${currentLocation.longitude.toFixed(5)}`;
+      locationStatus.textContent = "正在解析地址...";
+      try {
+        const address = canWriteCloud() ? await fetchAddressForLocation(currentLocation) : "";
+        currentLocation = { ...currentLocation, address };
+        locationStatus.textContent = locationLabel(currentLocation);
+      } catch {
+        locationStatus.textContent = coordinateText(currentLocation);
+      }
     },
     () => {
       locationStatus.textContent = "定位被拒绝";

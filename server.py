@@ -8,6 +8,7 @@ import shutil
 import uuid
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs
 from urllib.parse import urlparse
 from urllib.parse import urlencode
 from urllib.request import Request
@@ -22,6 +23,10 @@ MAX_BODY_BYTES = 12 * 1024 * 1024
 PLANTNET_API_KEY = os.environ.get("PLANTNET_API_KEY", "")
 PLANTNET_PROJECT = os.environ.get("PLANTNET_PROJECT", "all")
 WRITE_TOKEN = os.environ.get("WRITE_TOKEN", "")
+NOMINATIM_REVERSE_URL = os.environ.get(
+    "NOMINATIM_REVERSE_URL",
+    "https://nominatim.openstreetmap.org/reverse",
+)
 ALLOWED_ORIGINS = {
     "https://flower.qinyibin.com",
     "https://qinyibin.com",
@@ -47,6 +52,7 @@ def init_db():
                 latitude REAL,
                 longitude REAL,
                 accuracy REAL,
+                address TEXT,
                 note TEXT
             )
             """
@@ -56,6 +62,8 @@ def init_db():
         }
         if "suggestions" not in existing_columns:
             conn.execute("ALTER TABLE observations ADD COLUMN suggestions TEXT")
+        if "address" not in existing_columns:
+            conn.execute("ALTER TABLE observations ADD COLUMN address TEXT")
         conn.commit()
 
 
@@ -66,6 +74,7 @@ def row_to_observation(row):
             "latitude": row["latitude"],
             "longitude": row["longitude"],
             "accuracy": row["accuracy"],
+            "address": row["address"] or "",
         }
 
     return {
@@ -100,9 +109,9 @@ def save_observation(item):
             """
             INSERT OR REPLACE INTO observations (
                 id, created_at, name, latin, confidence, traits, suggestions, photo,
-                latitude, longitude, accuracy, note
+                latitude, longitude, accuracy, address, note
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 item["id"],
@@ -116,6 +125,7 @@ def save_observation(item):
                 location.get("latitude"),
                 location.get("longitude"),
                 location.get("accuracy"),
+                str(location.get("address", ""))[:240],
                 item.get("note", ""),
             ),
         )
@@ -298,6 +308,43 @@ def normalize_identification(payload):
     }
 
 
+def reverse_geocode(latitude, longitude):
+    query = urlencode(
+        {
+            "format": "jsonv2",
+            "lat": f"{latitude:.7f}",
+            "lon": f"{longitude:.7f}",
+            "zoom": "18",
+            "addressdetails": "1",
+            "accept-language": "zh-CN,zh,en",
+        }
+    )
+    request = Request(
+        f"{NOMINATIM_REVERSE_URL}?{query}",
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "flower-position-pwa/1.0 (personal plant observation app)",
+        },
+    )
+    with urlopen(request, timeout=8) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    return compact_address(payload)
+
+
+def compact_address(payload):
+    address = payload.get("address") or {}
+    parts = [
+        address.get("state"),
+        address.get("city") or address.get("town") or address.get("county"),
+        address.get("suburb") or address.get("city_district") or address.get("district"),
+        address.get("neighbourhood") or address.get("quarter"),
+        address.get("road") or address.get("pedestrian") or address.get("footway"),
+        address.get("house_number") or address.get("amenity") or address.get("building"),
+    ]
+    compact = " · ".join(str(part) for part in parts if part)
+    return compact or str(payload.get("display_name", ""))[:240]
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
@@ -334,6 +381,9 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if path == "/api/observations":
             self.send_json({"observations": list_observations()})
+            return
+        if path == "/api/reverse-geocode":
+            self.handle_reverse_geocode()
             return
         if path.startswith("/photos/"):
             self.serve_photo(path)
@@ -427,6 +477,26 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_json({"error": "This device is not authorized to save observations"}, status=403)
         return False
 
+    def handle_reverse_geocode(self):
+        if not self.require_write_access():
+            return
+        query = parse_qs(urlparse(self.path).query)
+        try:
+            latitude = float((query.get("lat") or [""])[0])
+            longitude = float((query.get("lon") or [""])[0])
+        except ValueError:
+            self.send_json({"error": "Invalid coordinates"}, status=400)
+            return
+        if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+            self.send_json({"error": "Invalid coordinates"}, status=400)
+            return
+        try:
+            address = reverse_geocode(latitude, longitude)
+        except Exception:
+            self.send_json({"error": "Address lookup failed"}, status=502)
+            return
+        self.send_json({"address": address})
+
     def read_json_body(self):
         size = int(self.headers.get("Content-Length", "0"))
         if size <= 0:
@@ -489,6 +559,13 @@ def normalize_observation(payload):
     location = item.get("location")
     if not isinstance(location, dict):
         location = None
+    elif location is not None:
+        location = {
+            "latitude": location.get("latitude"),
+            "longitude": location.get("longitude"),
+            "accuracy": location.get("accuracy"),
+            "address": str(location.get("address", ""))[:240],
+        }
 
     return {
         "id": item["id"][:80],

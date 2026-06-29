@@ -1,4 +1,4 @@
-const CACHE_NAME = "flower-position-pwa-v15";
+const CACHE_NAME = "flower-position-pwa-v16";
 const ASSETS = [
   ".",
   "index.html",
